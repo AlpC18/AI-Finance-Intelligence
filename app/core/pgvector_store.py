@@ -20,11 +20,27 @@ if Postgres is unreachable.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from starlette.concurrency import run_in_threadpool
 
 from app.core.vector_store import Embedder, HashingEmbedder, RetrievedChunk, _key
+
+
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+
+
+def _safe_identifier(name: str) -> str:
+    """Validate a SQL identifier before it is ever interpolated into a statement.
+
+    Table names cannot be passed as bind parameters, so the name is interpolated.
+    It is developer-supplied rather than user-supplied, but validating here means
+    the class has no string-injection path at all regardless of how it is wired.
+    """
+    if not _IDENTIFIER.match(name):
+        raise ValueError(f"Unsafe SQL identifier: {name!r}")
+    return name
 
 
 def _normalize_dsn(url: str) -> str:
@@ -55,7 +71,7 @@ class PgVectorStore:
         self._dsn = _normalize_dsn(dsn)
         self._embedder = embedder or HashingEmbedder()
         self._capacity = capacity
-        self._table = table
+        self._table = _safe_identifier(table)
         self._pool = pool  # injectable for tests
         self._ready = False
 
@@ -109,14 +125,14 @@ class PgVectorStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.executemany(
-                f"INSERT INTO {self._table} "
+                f"INSERT INTO {self._table} "  # nosec B608 - identifier validated; values are bound
                 "(dedup_key, text, headline, source, link, embedding) "
                 "VALUES ($1, $2, $3, $4, $5, $6::vector) "
                 "ON CONFLICT (dedup_key) DO NOTHING;",
                 rows,
             )
             await conn.execute(
-                f"DELETE FROM {self._table} WHERE id NOT IN "
+                f"DELETE FROM {self._table} WHERE id NOT IN "  # nosec B608 - identifier validated; capacity is bound
                 f"(SELECT id FROM {self._table} ORDER BY id DESC LIMIT $1);",
                 self._capacity,
             )
@@ -133,7 +149,7 @@ class PgVectorStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             records = await conn.fetch(
-                f"SELECT text, headline, source, link, "
+                f"SELECT text, headline, source, link, "  # nosec B608 - identifier validated; vector is bound
                 "1 - (embedding <=> $1::vector) AS score "
                 f"FROM {self._table} ORDER BY embedding <=> $1::vector LIMIT $2;",
                 literal,
@@ -159,4 +175,4 @@ class PgVectorStore:
         await self._ensure_schema()
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            return int(await conn.fetchval(f"SELECT COUNT(*) FROM {self._table};"))
+            return int(await conn.fetchval(f"SELECT COUNT(*) FROM {self._table};"))  # nosec B608 - identifier validated
