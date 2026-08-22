@@ -11,6 +11,7 @@ import json
 import logging
 import smtplib
 from email.message import EmailMessage
+from typing import Optional
 
 import httpx
 from pydantic import BaseModel
@@ -29,9 +30,15 @@ class NotificationContact(BaseModel):
 
 
 class NotificationService:
-    def __init__(self, settings: Settings, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        timeout: float = 10.0,
+        transport: Optional[httpx.AsyncBaseTransport] = None,
+    ) -> None:
         self._settings = settings
         self._timeout = timeout
+        self._transport = transport  # test seam (httpx.MockTransport)
 
     @property
     def enabled(self) -> bool:
@@ -50,7 +57,9 @@ class NotificationService:
 
     async def _post_webhook(self, url: str, frame: dict) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
                 resp = await client.post(url, json=frame)
                 resp.raise_for_status()
             return True
