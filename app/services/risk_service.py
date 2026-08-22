@@ -118,4 +118,5 @@ class RiskService:
             raise AppError(
                 f"Kill-switch aktif: {detail} Otomatik islem durduruldu.",
                 status_code=423,
+                reason="risk_halt",
             )

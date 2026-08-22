@@ -1,0 +1,165 @@
+# Operator-facing Prometheus alert rules for AI Finance Intelligence.
+#
+# The application already alerts THE USER (price/signal alerts over WebSocket).
+# These rules alert THE OPERATOR: they fire on the counters in
+# app/core/metrics.py plus the HTTP series from prometheus-fastapi-instrumentator.
+#
+# Load into Prometheus with:
+#   rule_files:
+#     - /etc/prometheus/rules/alerts.yml
+#
+# Severity convention:
+#   critical -> money or data is at risk right now; page.
+#   warning  -> degraded; investigate during working hours.
+groups:
+  - name: ai-finance-availability
+    rules:
+      - alert: ApiDown
+        expr: up{job="ai-finance"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API instance {{ $labels.instance }} is down"
+          description: "Prometheus cannot scrape the instance. Execution and alerting are offline."
+
+      - alert: HighHttpErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total[5m])), 0.001)
+            > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx rate above 5% for 5 minutes"
+          description: "{{ $value | humanizePercentage }} of requests are failing server-side."
+
+      - alert: ApiLatencyDegraded
+        expr: |
+          histogram_quantile(
+            0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 request latency above 2s"
+          description: "p95 is {{ $value | humanizeDuration }}; upstream providers or the AI call are slow."
+
+  - name: ai-finance-execution
+    rules:
+      # The signal that matters most: orders are being refused at an abnormal rate.
+      # Risk-limit rejections are expected and excluded — this fires on broken
+      # execution (missing credentials, provider errors, disabled trading).
+      - alert: OrderRejectRateHigh
+        expr: |
+          sum(rate(trade_orders_total{outcome="rejected",
+                                      reason!~"risk_halt|confidence|notional|buying_power"}[10m]))
+            / clamp_min(sum(rate(trade_orders_total[10m])), 0.001)
+            > 0.2
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Over 20% of orders rejected for non-risk reasons"
+          description: "Execution path is likely broken (reason={{ $labels.reason }})."
+
+      - alert: KillSwitchTripping
+        expr: increase(trade_orders_total{outcome="rejected",reason="risk_halt"}[15m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kill-switch is rejecting orders"
+          description: "{{ $value }} orders blocked by the kill-switch in 15m — check drawdown limits."
+
+      # Fills should arrive on the webhook fast path. If ONLY the poll backstop is
+      # writing fills, webhook ingestion is broken and fills are arriving late.
+      - alert: WebhookFillIngestionStalled
+        expr: |
+          sum(rate(trade_fills_reconciled_total{source="poll"}[30m])) > 0
+            and sum(rate(trade_fills_reconciled_total{source="webhook"}[30m])) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "All fills are arriving via the poll backstop"
+          description: "No webhook-sourced fills in 30m; check the Alpaca trade-updates subscription and TRADE_WEBHOOK_SECRET."
+
+  - name: ai-finance-dependencies
+    rules:
+      - alert: AiCircuitBreakerTripping
+        expr: increase(ai_circuit_breaker_trips_total[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Anthropic circuit breaker tripped {{ $value }} times in 15m"
+          description: "Signals are degrading to indicator-only. Check the Anthropic API status and key quota."
+
+      - alert: MarketProviderFailingOver
+        expr: increase(market_provider_failovers_total{provider="yahoo"}[10m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Primary market provider {{ $labels.provider }} is failing"
+          description: "{{ $value }} failovers in 10m; serving from the fallback source."
+
+      # Both sources failing means the hot path has no market data at all.
+      - alert: AllMarketProvidersFailing
+        expr: |
+          sum(rate(market_provider_failovers_total{provider="yahoo"}[10m])) > 0
+            and sum(rate(market_provider_failovers_total{provider="stooq"}[10m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Every market-data provider is failing"
+          description: "Signal generation is fully blocked — no price data from any source."
+
+      - alert: CacheBackendMissingEntirely
+        expr: |
+          sum(rate(cache_events_total{backend="redis"}[10m])) == 0
+            and sum(rate(cache_events_total[10m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis cache is serving no traffic"
+          description: "Workers have silently degraded to per-process in-memory cache; cross-worker state is inconsistent."
+
+  - name: ai-finance-delivery
+    rules:
+      # A disconnect storm means clients cannot hold a socket — user alerts are
+      # not being delivered live even though the backend looks healthy.
+      - alert: WebSocketDisconnectStorm
+        expr: sum(rate(ws_disconnects_total{reason="error"}[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WebSocket error-disconnects above 0.5/s"
+          description: "Live alert delivery is unstable; users may be missing kill-switch and fill notifications."
+
+      - alert: AlertFallbackFailing
+        expr: |
+          sum(rate(alert_fallback_deliveries_total{result="failed"}[15m]))
+            / clamp_min(sum(rate(alert_fallback_deliveries_total[15m])), 0.001)
+            > 0.5
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Out-of-band alert delivery is failing"
+          description: "Offline users are receiving neither WebSocket nor email/webhook alerts. Check SMTP_HOST and NOTIFY_WEBHOOK_URL."
+
+      - alert: AlertFallbackSaturated
+        expr: sum(rate(alert_fallback_deliveries_total[15m])) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusually high out-of-band alert volume"
+          description: "Most alerts are escaping to the fallback sink — WebSocket presence tracking may be broken."

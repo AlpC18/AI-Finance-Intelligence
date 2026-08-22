@@ -2,6 +2,7 @@
 import asyncio
 
 from app.core.cache import CacheBackend
+from app.core.tracing import span
 from app.models.market import Indicators, MarketData, Quote, Signal
 from app.providers.base import MarketDataProvider
 from app.services.ai_service import AIService
@@ -74,30 +75,42 @@ class MarketService:
             return [], None
 
     async def get_signal(self, symbol: str) -> Signal:
-        """On-demand, RAG-grounded AI signal. Falls back to a safe degraded signal."""
-        data = await self.get_market_data(symbol)
-        events, blocking = await self._event_context()
-        if blocking:
-            # Circuit breaker: a high-impact imminent event halts trading BEFORE any
-            # AI call — enforcement must not depend on the LLM choosing to comply.
-            return Signal(action="HOLD", confidence=0.0, rationale=blocking)
-        out = await self._ai.market_signal(
-            data.quote.symbol,
-            data.quote.model_dump(),
-            data.indicators.model_dump(),
-            fundamentals=data.fundamentals.model_dump() if data.fundamentals else None,
-            events=events,
-            blocking=blocking,
-        )
-        if out is None:
-            return Signal(
-                action="HOLD",
-                degraded=True,
-                rationale="AI devre disi/gecici hata - yalnizca gostergeler.",
+        """On-demand, RAG-grounded AI signal. Falls back to a safe degraded signal.
+
+        First span of the traced hot path: signal.generate -> order.execute ->
+        fill.reconcile.
+        """
+        with span("signal.generate", symbol=symbol.upper()) as sp:
+            data = await self.get_market_data(symbol)
+            events, blocking = await self._event_context()
+            if blocking:
+                # Circuit breaker: a high-impact imminent event halts trading BEFORE
+                # any AI call — enforcement must not depend on the LLM complying.
+                sp.set_attribute("signal.blocked", True)
+                sp.set_attribute("signal.action", "HOLD")
+                return Signal(action="HOLD", confidence=0.0, rationale=blocking)
+            out = await self._ai.market_signal(
+                data.quote.symbol,
+                data.quote.model_dump(),
+                data.indicators.model_dump(),
+                fundamentals=(
+                    data.fundamentals.model_dump() if data.fundamentals else None
+                ),
+                events=events,
+                blocking=blocking,
             )
-        return Signal(
-            action=out.action,
-            confidence=out.confidence,
-            rationale=out.rationale,
-            citations=out.citations,
-        )
+            if out is None:
+                sp.set_attribute("signal.degraded", True)
+                return Signal(
+                    action="HOLD",
+                    degraded=True,
+                    rationale="AI devre disi/gecici hata - yalnizca gostergeler.",
+                )
+            sp.set_attribute("signal.action", out.action)
+            sp.set_attribute("signal.confidence", float(out.confidence))
+            return Signal(
+                action=out.action,
+                confidence=out.confidence,
+                rationale=out.rationale,
+                citations=out.citations,
+            )

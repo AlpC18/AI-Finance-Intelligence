@@ -17,6 +17,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from app.core.errors import ProviderError
+from app.core.metrics import record_provider_failover
 from app.models.market import Fundamentals
 from app.providers.base import MarketDataProvider
 
@@ -78,6 +79,7 @@ class FailoverMarketProvider:
         h.healthy = False
         h.failures += 1
         h.last_error = str(exc)[:200]
+        record_provider_failover(name)  # operator signal: upstream degraded
 
     def health(self) -> list[ProviderHealth]:
         return [self._health[name] for name, _ in self._providers]

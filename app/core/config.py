@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     smtp_from: str = "alerts@ai-finance.local"
     smtp_use_tls: bool = True
 
+    # Distributed tracing (OpenTelemetry). Optional: with no OTLP endpoint the
+    # SDK still propagates context but drops spans, so enabling it is cheap.
+    otel_enabled: bool = False
+    otel_service_name: str = "ai-finance-intelligence"
+    otel_exporter_otlp_endpoint: str = ""  # e.g. http://localhost:4318/v1/traces
+
     # Encryption at rest (Fernet). Required & validated in production.
     encryption_key: str = ""
 

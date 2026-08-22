@@ -14,6 +14,8 @@ from sqlmodel import Session, select
 from app.core.config import Settings
 from app.core.crypto import decrypt, encrypt
 from app.core.errors import AppError
+from app.core.metrics import record_order_accepted, record_order_rejected
+from app.core.tracing import span
 from app.models.broker import (
     BrokerCredential,
     CredentialCreate,
@@ -97,6 +99,7 @@ class TradeService:
             raise AppError(
                 "Broker kimlik bilgileri bulunamadi. Once /api/trade/credentials ile kaydedin.",
                 status_code=400,
+                reason="no_credentials",
             )
         return provider
 
@@ -112,8 +115,32 @@ class TradeService:
     async def execute(
         self, session: Session, user_id: int, req: TradeRequest
     ) -> TradeResult:
+        """Second span of the hot path, and the source of the order-reject rate.
+
+        Every rejection is counted with a low-cardinality reason label so the
+        operator alert rules can distinguish "users hitting risk limits" from
+        "execution is broken".
+        """
+        with span(
+            "order.execute", symbol=req.symbol.upper().strip(), **{"user.id": user_id}
+        ) as sp:
+            try:
+                result = await self._execute_inner(session, user_id, req, sp)
+            except AppError as exc:
+                record_order_rejected(_reject_reason(exc))
+                sp.set_attribute("order.rejected", True)
+                sp.record_exception(exc)
+                raise
+            record_order_accepted()
+            return result
+
+    async def _execute_inner(
+        self, session: Session, user_id: int, req: TradeRequest, sp
+    ) -> TradeResult:
         if not self._settings.trade_enabled:
-            raise AppError("Trade execution devre disi.", status_code=403)
+            raise AppError(
+                "Trade execution devre disi.", status_code=403, reason="disabled"
+            )
         if self._risk is not None:
             await self._risk.assert_not_halted(session, user_id)  # kill-switch
 
@@ -127,6 +154,9 @@ class TradeService:
         account = await provider.get_account()
         self._validate_buying_power(side, notional, account)  # live buying power
 
+        sp.set_attribute("order.side", side)
+        sp.set_attribute("order.notional", float(notional))
+
         broker_order = await provider.place_order(
             OrderRequest(
                 symbol=req.symbol.upper().strip(),
@@ -137,6 +167,7 @@ class TradeService:
                 time_in_force=req.time_in_force,
             )
         )
+        sp.set_attribute("order.id", str(broker_order.id))
         self._persist_order(session, user_id, req, broker_order)
         return TradeResult(
             accepted=True,
@@ -184,16 +215,20 @@ class TradeService:
                 f"Sinyal guveni ({req.confidence:.2f}) minimum esigin "
                 f"({self._settings.min_trade_confidence:.2f}) altinda; islem reddedildi.",
                 status_code=422,
+                reason="confidence",
             )
 
     def _validate_notional(self, notional: float) -> None:
         if notional <= 0:
-            raise AppError("Gecersiz islem buyuklugu.", status_code=422)
+            raise AppError(
+                "Gecersiz islem buyuklugu.", status_code=422, reason="notional"
+            )
         if notional > self._settings.max_order_notional:
             raise AppError(
                 f"Emir buyuklugu ({notional:.2f}) izin verilen azami "
                 f"({self._settings.max_order_notional:.2f}) ustunde.",
                 status_code=422,
+                reason="notional",
             )
 
     def _validate_buying_power(self, side: str, notional: float, account) -> None:
@@ -201,6 +236,7 @@ class TradeService:
             raise AppError(
                 f"Yetersiz alim gucu: {account.buying_power:.2f} < {notional:.2f}.",
                 status_code=422,
+                reason="buying_power",
             )
 
     async def _reference_price(self, req: TradeRequest) -> float:
@@ -210,12 +246,21 @@ class TradeService:
         return data.quote.price
 
 
+def _reject_reason(exc: AppError) -> str:
+    """Metric label for a rejection — structural, never parsed from the message."""
+    return getattr(exc, "reason", None) or "unknown"
+
+
 def _resolve_side(req: TradeRequest) -> str:
     if req.action == "BUY":
         return "buy"
     if req.action == "SELL":
         return "sell"
-    raise AppError("HOLD sinyali icra edilemez; yalnizca BUY/SELL.", status_code=422)
+    raise AppError(
+        "HOLD sinyali icra edilemez; yalnizca BUY/SELL.",
+        status_code=422,
+        reason="invalid_action",
+    )
 
 
 def _credential_read(record: BrokerCredential, api_key_plain: str) -> CredentialRead:

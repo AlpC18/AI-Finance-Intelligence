@@ -18,6 +18,7 @@ import logging
 from typing import Any, Optional, Protocol
 
 from app.core.config import Settings
+from app.core.metrics import record_alert_fallback
 from app.core.notifications import NotificationContact, NotificationService
 
 logger = logging.getLogger("ws_broadcaster")
@@ -122,10 +123,13 @@ class WsBroadcaster:
         if online or contact is None or self._notifier is None:
             return False
         try:
-            return await self._notifier.notify(contact, frame)
+            delivered = await self._notifier.notify(contact, frame)
         except Exception as exc:  # noqa: BLE001 - fallback must never raise
             logger.warning("Alert fallback notify failed for user %s: %s", user_id, exc)
+            record_alert_fallback(False)
             return False
+        record_alert_fallback(delivered)
+        return delivered
 
     async def _deliver_and_check(self, user_id: int, frame: dict) -> bool:
         """Send the frame and report whether the user has a confirmed live socket."""

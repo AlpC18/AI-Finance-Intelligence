@@ -7,6 +7,8 @@ from typing import Callable, Optional
 
 from sqlmodel import Session, select
 
+from app.core.metrics import record_fill_reconciled
+from app.core.tracing import span
 from app.models.order import TradeOrder, is_terminal
 from app.models.risk import DriftItem, DriftReport
 from app.models.transaction import Transaction
@@ -45,6 +47,7 @@ class TradeReconciliationService:
             status=remote.status,
             filled_quantity=remote.filled_quantity,
             filled_avg_price=remote.filled_avg_price,
+            source="poll",
         )
         session.add(order)
         return wrote
@@ -57,6 +60,7 @@ class TradeReconciliationService:
         status: str,
         filled_quantity: float,
         filled_avg_price: Optional[float],
+        source: str = "poll",
     ) -> bool:
         """Apply an authoritative order state (from poll OR webhook) to the ledger.
 
@@ -88,6 +92,7 @@ class TradeReconciliationService:
             )
             order.reconciled = True
             wrote = True
+            record_fill_reconciled(source)
             logger.info(
                 "Reconciled fill: user=%s order=%s %s %s @ %s",
                 order.user_id, order.broker_order_id, order.side,
@@ -106,21 +111,30 @@ class TradeReconciliationService:
         rather than on the next poll. Idempotent with the polling backstop via the
         same ``reconciled`` guard. Returns True iff a fill was written.
         """
-        order = session.exec(
-            select(TradeOrder).where(TradeOrder.broker_order_id == update.order.id)
-        ).first()
-        if order is None:
-            return False  # unknown order (foreign/stale) — ignore, never raise
-        wrote = self._apply_remote_state(
-            session,
-            order,
-            status=update.order.status,
-            filled_quantity=update.order.filled_qty,
-            filled_avg_price=update.order.filled_avg_price,
-        )
-        session.add(order)
-        session.commit()
-        return wrote
+        with span(
+            "fill.reconcile",
+            source="webhook",
+            event=update.event,
+            **{"order.id": update.order.id},
+        ) as sp:
+            order = session.exec(
+                select(TradeOrder).where(TradeOrder.broker_order_id == update.order.id)
+            ).first()
+            if order is None:
+                sp.set_attribute("fill.unknown_order", True)
+                return False  # unknown order (foreign/stale) — ignore, never raise
+            wrote = self._apply_remote_state(
+                session,
+                order,
+                status=update.order.status,
+                filled_quantity=update.order.filled_qty,
+                filled_avg_price=update.order.filled_avg_price,
+                source="webhook",
+            )
+            session.add(order)
+            session.commit()
+            sp.set_attribute("fill.written", wrote)
+            return wrote
 
     async def reconcile_open_orders(
         self, session: Session, broker_for: BrokerResolver

@@ -16,6 +16,7 @@ import structlog
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from sqlmodel import Session
 
+from app.core.metrics import record_ws_disconnect
 from app.core.ws_broadcaster import presence_key
 
 _PRESENCE_TTL = 3600  # seconds; refreshed on every connect, self-heals on crashes
@@ -174,8 +175,9 @@ async def insights_ws(
             msg = await websocket.receive_json()
             await _stream_symbol(websocket, msg.get("symbol") or symbol, market, ai, news)
     except WebSocketDisconnect:
-        pass
+        record_ws_disconnect("client")  # normal close: the client went away
     except Exception as exc:  # noqa: BLE001 - never leak a socket on unexpected error
+        record_ws_disconnect("error")   # a spike here is an operator-grade signal
         logger.warning("ws_stream_error", error=str(exc))
     finally:
         await manager.disconnect(user.id, websocket)

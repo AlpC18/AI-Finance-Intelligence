@@ -16,6 +16,7 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestIDMiddleware
 from app.core.rate_limit import limiter
+from app.core.tracing import configure_tracing
 from app.db.database import init_db
 
 configure_logging()
@@ -69,11 +70,12 @@ def create_app() -> FastAPI:
     app.state.enable_scheduler = True
     app.state.limiter = limiter
 
-    # Observability: request-id logging + Prometheus /metrics.
+    # Observability: request-id logging + Prometheus /metrics + OTel traces.
     app.add_middleware(RequestIDMiddleware)
     Instrumentator().instrument(app).expose(
         app, endpoint="/metrics", include_in_schema=False
     )
+    configure_tracing(app, get_settings())  # no-op unless OTEL_ENABLED
 
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     register_error_handlers(app)
