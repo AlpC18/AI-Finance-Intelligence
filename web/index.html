@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Finance Intelligence — Instrument Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <!-- AUTH -->
+  <section id="auth" class="auth" hidden>
+    <div class="auth-card">
+      <div class="wordmark"><span class="wm-tick">▌</span>AFI</div>
+      <h1 class="auth-title">The instrument deck</h1>
+      <p class="auth-sub">Sign in to read markets, run your ledger, and arm alerts.</p>
+      <div class="tabs" role="tablist">
+        <button class="tab is-on" data-mode="login" role="tab">Sign in</button>
+        <button class="tab" data-mode="register" role="tab">Create account</button>
+      </div>
+      <form id="auth-form" class="stack" autocomplete="on">
+        <label class="field"><span>Email</span>
+          <input id="auth-email" type="email" required placeholder="you@desk.com" /></label>
+        <label class="field"><span>Password</span>
+          <input id="auth-pass" type="password" required minlength="8" placeholder="8+ characters" /></label>
+        <button class="btn btn-signal" type="submit" id="auth-submit">Sign in</button>
+        <p class="form-note" id="auth-note" aria-live="polite"></p>
+      </form>
+    </div>
+    <p class="fine">Not investment advice. Data is delayed and for research only.</p>
+  </section>
+
+  <!-- DECK -->
+  <div id="deck" class="deck" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="wm-tick">▌</span>
+        <span class="brand-name">AI Finance Intelligence</span>
+        <span class="brand-kicker">instrument deck</span>
+      </div>
+      <div class="session">
+        <span id="who" class="who mono"></span>
+        <button class="btn btn-ghost" id="logout">Log out</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <!-- HERO: MARKET READOUT -->
+      <section class="panel hero" id="market" aria-labelledby="mkt-label">
+        <div class="panel-head"><span class="eyebrow" id="mkt-label">Market instrument</span></div>
+        <div class="mkt-controls">
+          <input id="mkt-symbol" class="input-lg mono" placeholder="Symbol — e.g. AAPL, BTC-USD, MSFT" />
+          <button class="btn btn-solid" id="mkt-read">Read</button>
+          <button class="btn btn-signal" id="mkt-signal-btn">Ask the model</button>
+        </div>
+        <div id="mkt-readout" class="readout-empty">Enter a symbol to take a reading.</div>
+        <div id="mkt-signal" class="signal-slot"></div>
+      </section>
+
+      <!-- TRADE DESK: execution, risk kill-switch, live model stream -->
+      <section class="panel" id="desk-panel" aria-labelledby="desk-label">
+        <div class="panel-head"><span class="eyebrow" id="desk-label">Trade desk</span>
+          <span class="head-note">execution, risk &amp; live model stream</span></div>
+        <div class="readout-strip" id="deck-stats"></div>
+        <div class="kill-row">
+          <label class="switch" title="Halt or resume automated trading">
+            <input type="checkbox" id="kill-toggle" />
+            <span>Kill-switch</span>
+          </label>
+          <span id="kill-state" class="tag">—</span>
+        </div>
+        <form id="desk-stream-form" class="inline-row">
+          <input id="desk-symbol" class="mono" placeholder="Symbol to stream — e.g. AAPL" />
+          <button class="btn btn-signal" id="desk-stream-btn" type="submit">Stream insight</button>
+        </form>
+        <pre id="desk-stream" class="signal-slot mono" aria-live="polite"></pre>
+        <div id="desk-cite" class="cite-row"></div>
+      </section>
+
+      <!-- LEDGER + RISK -->
+      <section class="panel" id="ledger" aria-labelledby="lg-label">
+        <div class="panel-head"><span class="eyebrow" id="lg-label">Ledger</span>
+          <span class="head-note">holdings &amp; P&amp;L, reconstructed from every trade</span></div>
+        <form id="tx-form" class="tx-row">
+          <input id="tx-symbol" class="mono" placeholder="Symbol" required />
+          <select id="tx-action" class="mono" aria-label="Side">
+            <option value="BUY">Buy</option><option value="SELL">Sell</option>
+          </select>
+          <input id="tx-qty" class="mono" type="number" step="any" min="0" placeholder="Qty" required />
+          <input id="tx-price" class="mono" type="number" step="any" min="0" placeholder="Price" required />
+          <button class="btn btn-solid" type="submit">Record trade</button>
+        </form>
+        <div class="readout-strip" id="pf-summary"></div>
+        <div id="pf-holdings" class="table-slot"></div>
+        <div class="panel-foot">
+          <button class="btn btn-signal" id="advice-btn">Ask for advice</button>
+        </div>
+        <div id="pf-advice" class="signal-slot"></div>
+      </section>
+
+      <!-- WIRE (news) -->
+      <section class="panel" id="wire" aria-labelledby="wire-label">
+        <div class="panel-head"><span class="eyebrow" id="wire-label">Wire</span></div>
+        <form id="news-form" class="inline-row">
+          <input id="news-query" class="mono" placeholder="Company or ticker" required />
+          <button class="btn btn-solid" type="submit">Scan</button>
+          <button class="btn btn-signal" id="news-ai" type="button">Model read</button>
+        </form>
+        <div id="news-insight" class="signal-slot"></div>
+        <div id="news-list" class="wire-list"></div>
+      </section>
+
+      <!-- WATCH (alerts) -->
+      <section class="panel" id="watch" aria-labelledby="watch-label">
+        <div class="panel-head"><span class="eyebrow" id="watch-label">Watch</span>
+          <span class="head-note">the deck checks these while you're away</span></div>
+        <form id="alert-form" class="tx-row">
+          <input id="al-symbol" class="mono" placeholder="Symbol" required />
+          <select id="al-cond" class="mono" aria-label="Condition">
+            <option value="PRICE_ABOVE">Price above</option>
+            <option value="PRICE_BELOW">Price below</option>
+            <option value="RSI_BELOW">RSI below</option>
+            <option value="AI_SIGNAL_STRONG_BUY">Model: strong buy</option>
+          </select>
+          <input id="al-threshold" class="mono" type="number" step="any" placeholder="Threshold" />
+          <button class="btn btn-solid" type="submit">Arm alert</button>
+        </form>
+        <div id="alerts-list" class="watch-list"></div>
+      </section>
+    </main>
+
+    <footer class="deck-foot">
+      <span class="fine">Not investment advice — research signals only.</span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

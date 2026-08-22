@@ -1,0 +1,130 @@
+"""Application configuration + strict production preflight validation."""
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ConfigError(RuntimeError):
+    """Raised to refuse boot when production configuration is unsafe."""
+
+
+_PLACEHOLDER_SECRET_MARKERS = ("dev-insecure", "change-me", "changeme")
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    environment: str = "development"  # development | production
+
+    # AI
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-sonnet-4-6"
+    ai_max_tokens: int = 1024
+
+    # Cache
+    cache_ttl_seconds: int = 120
+    cache_backend: str = "memory"  # memory | redis
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Rate limiting (per authenticated user, else per IP)
+    rate_limit_ai: str = "5/minute"
+
+    # Alerts / background scheduler
+    alerts_enabled: bool = True
+    alert_interval_minutes: int = 5
+
+    # Auth (JWT)
+    jwt_secret: str = "dev-insecure-change-me-please-set-a-strong-32byte-secret"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+
+    # Trade execution (paper-first broker integration)
+    trade_enabled: bool = True
+    alpaca_base_url: str = "https://paper-api.alpaca.markets"
+    max_order_notional: float = 10_000.0
+    min_trade_confidence: float = 0.0  # 0 -> no gate; set >0 to require signal confidence
+    rate_limit_trade: str = "10/minute"
+    order_reconciliation_enabled: bool = True
+    order_poll_interval_seconds: int = 30
+    position_sync_enabled: bool = True
+    position_sync_interval_minutes: int = 15
+    event_scan_enabled: bool = True
+    event_scan_interval_minutes: int = 10
+
+    # Inbound broker webhook (Alpaca trade updates). Shared-secret authenticated;
+    # empty -> the endpoint is disabled (503) and only the poll backstop runs.
+    trade_webhook_secret: str = ""
+
+    # Multi-channel alert fallback: when a critical alert can't reach a live
+    # WebSocket, deliver it out-of-band. Both sinks are optional and best-effort.
+    notify_webhook_url: str = ""          # generic POST sink (Slack/ops/etc.)
+    notify_email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "alerts@ai-finance.local"
+    smtp_use_tls: bool = True
+
+    # Encryption at rest (Fernet). Required & validated in production.
+    encryption_key: str = ""
+
+    # Persistence / server
+    database_url: str = "sqlite:///./finance.db"
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+    @property
+    def ai_enabled(self) -> bool:
+        return bool(self.anthropic_api_key.strip())
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() == "production"
+
+    def _secret_is_placeholder(self) -> bool:
+        low = self.jwt_secret.lower()
+        return any(marker in low for marker in _PLACEHOLDER_SECRET_MARKERS)
+
+    def production_config_errors(self) -> list[str]:
+        """Fatal misconfigurations that must block boot in production."""
+        errors: list[str] = []
+        if not self.is_production:
+            return errors
+        if not self.jwt_secret or self._secret_is_placeholder():
+            errors.append("JWT_SECRET is missing or a development placeholder.")
+        elif len(self.jwt_secret.encode("utf-8")) < 32:
+            errors.append("JWT_SECRET must be at least 32 bytes in production.")
+        if not self.anthropic_api_key.strip():
+            errors.append("ANTHROPIC_API_KEY is required in production.")
+        if self.cache_backend == "memory":
+            errors.append(
+                "CACHE_BACKEND must be 'redis' in production (multi-worker safety)."
+            )
+        errors.extend(self._encryption_key_errors())
+        return errors
+
+    def _encryption_key_errors(self) -> list[str]:
+        raw = self.encryption_key.strip()
+        if not raw:
+            return ["ENCRYPTION_KEY is required in production (encrypts broker keys at rest)."]
+        from cryptography.fernet import Fernet
+
+        keys = [k.strip() for k in raw.split(",") if k.strip()]
+        for key in keys:
+            try:
+                Fernet(key.encode("utf-8"))
+            except Exception:  # noqa: BLE001 - invalid key material
+                return [
+                    "ENCRYPTION_KEY must be valid urlsafe-base64 Fernet key(s) "
+                    "(comma-separated, primary first, for rotation)."
+                ]
+        return []
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

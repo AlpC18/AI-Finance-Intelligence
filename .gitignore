@@ -1,0 +1,28 @@
+# --- Secrets & local state (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- Test & coverage artifacts ---
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# --- Tooling / editor / OS ---
+.DS_Store
+.npm-cache/
+.ignore
+graft/
+.claude/settings.local.json

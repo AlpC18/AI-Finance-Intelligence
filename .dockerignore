@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+*.db
+.env
+.git/
+.github/
+.npm-cache/
+graft/
+.DS_Store
+*.md
