@@ -1,0 +1,3134 @@
+components:
+  schemas:
+    Advice:
+      properties:
+        citations:
+          default: []
+          items:
+            type: string
+          title: Citations
+          type: array
+        degraded:
+          default: false
+          title: Degraded
+          type: boolean
+        disclaimer:
+          default: Bu bir yatirim tavsiyesi degildir.
+          title: Disclaimer
+          type: string
+        narrative:
+          default: ''
+          title: Narrative
+          type: string
+        suggestions:
+          default: []
+          items:
+            type: string
+          title: Suggestions
+          type: array
+      title: Advice
+      type: object
+    AlertCreate:
+      properties:
+        condition_type:
+          enum:
+          - RSI_BELOW
+          - PRICE_ABOVE
+          - PRICE_BELOW
+          - AI_SIGNAL_STRONG_BUY
+          title: Condition Type
+          type: string
+        is_active:
+          default: true
+          title: Is Active
+          type: boolean
+        symbol:
+          maxLength: 20
+          minLength: 1
+          title: Symbol
+          type: string
+        threshold_value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Threshold Value
+      required:
+      - symbol
+      - condition_type
+      title: AlertCreate
+      type: object
+    AlertRead:
+      properties:
+        condition_type:
+          enum:
+          - RSI_BELOW
+          - PRICE_ABOVE
+          - PRICE_BELOW
+          - AI_SIGNAL_STRONG_BUY
+          title: Condition Type
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          title: Id
+          type: integer
+        is_active:
+          title: Is Active
+          type: boolean
+        last_triggered_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Triggered At
+        symbol:
+          title: Symbol
+          type: string
+        threshold_value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Threshold Value
+      required:
+      - id
+      - symbol
+      - condition_type
+      - threshold_value
+      - is_active
+      - created_at
+      - last_triggered_at
+      title: AlertRead
+      type: object
+    AlpacaTradeUpdate:
+      description: A single Alpaca trade-update event delivered to /api/trade/webhook.
+      properties:
+        event:
+          maxLength: 64
+          minLength: 1
+          title: Event
+          type: string
+        order:
+          $ref: '#/components/schemas/WebhookOrder'
+      required:
+      - event
+      - order
+      title: AlpacaTradeUpdate
+      type: object
+    ApiContracts:
+      description: JSON-schema contracts for the frontend (WS frames + trade/backtest I/O).
+      properties:
+        backtest_report:
+          additionalProperties: true
+          title: Backtest Report
+          type: object
+        backtest_request:
+          additionalProperties: true
+          title: Backtest Request
+          type: object
+        kill_switch:
+          additionalProperties: true
+          title: Kill Switch
+          type: object
+        trade_request:
+          additionalProperties: true
+          title: Trade Request
+          type: object
+        ws:
+          $ref: '#/components/schemas/WsContract'
+        ws_frames:
+          additionalProperties: true
+          title: Ws Frames
+          type: object
+      required:
+      - ws
+      - ws_frames
+      - kill_switch
+      - trade_request
+      - backtest_request
+      - backtest_report
+      title: ApiContracts
+      type: object
+    Article:
+      properties:
+        link:
+          title: Link
+          type: string
+        published:
+          default: ''
+          title: Published
+          type: string
+        source:
+          default: ''
+          title: Source
+          type: string
+        title:
+          title: Title
+          type: string
+      required:
+      - title
+      - link
+      title: Article
+      type: object
+    AuditLogPage:
+      description: A page of the audit trail. `total` is the unpaginated match count.
+      properties:
+        items:
+          default: []
+          items:
+            $ref: '#/components/schemas/AuditLogRead'
+          title: Items
+          type: array
+        limit:
+          title: Limit
+          type: integer
+        offset:
+          title: Offset
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - total
+      - limit
+      - offset
+      title: AuditLogPage
+      type: object
+    AuditLogRead:
+      description: 'One audit row, joined to the order it produced.
+
+
+        The order-side fields are Optional because the audit log outlives the order:
+
+        the trail is append-only, so a row must still render if its order is gone.'
+      properties:
+        confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Confidence
+        execution_timestamp:
+          format: date-time
+          title: Execution Timestamp
+          type: string
+        filled_avg_price:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Filled Avg Price
+        filled_quantity:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Filled Quantity
+        id:
+          title: Id
+          type: integer
+        order_id:
+          title: Order Id
+          type: string
+        raw_ai_context:
+          title: Raw Ai Context
+          type: string
+        signal_type:
+          title: Signal Type
+          type: string
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        symbol:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Symbol
+      required:
+      - id
+      - order_id
+      - signal_type
+      - execution_timestamp
+      - raw_ai_context
+      title: AuditLogRead
+      type: object
+    BacktestComparison:
+      description: 'Several runs side by side, plus which one leads on each metric.
+
+
+        ``best`` maps a metric name to the winning run id. A metric no run can be
+
+        ranked on is simply absent rather than pointing at an arbitrary run.'
+      properties:
+        best:
+          additionalProperties:
+            type: integer
+          default: {}
+          title: Best
+          type: object
+        runs:
+          default: []
+          items:
+            $ref: '#/components/schemas/BacktestRunSummary'
+          title: Runs
+          type: array
+      title: BacktestComparison
+      type: object
+    BacktestMetrics:
+      properties:
+        expectancy:
+          title: Expectancy
+          type: number
+        final_equity:
+          title: Final Equity
+          type: number
+        hit_rate_pct:
+          title: Hit Rate Pct
+          type: number
+        max_drawdown_pct:
+          title: Max Drawdown Pct
+          type: number
+        profit_factor:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Profit Factor
+        sharpe_ratio:
+          title: Sharpe Ratio
+          type: number
+        total_return_pct:
+          title: Total Return Pct
+          type: number
+        trades:
+          title: Trades
+          type: integer
+      required:
+      - trades
+      - hit_rate_pct
+      - expectancy
+      - max_drawdown_pct
+      - sharpe_ratio
+      - total_return_pct
+      - final_equity
+      title: BacktestMetrics
+      type: object
+    BacktestReport:
+      properties:
+        bars:
+          title: Bars
+          type: integer
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created At
+        equity_curve:
+          items:
+            $ref: '#/components/schemas/EquityPoint'
+          title: Equity Curve
+          type: array
+        id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Id
+        metrics:
+          $ref: '#/components/schemas/BacktestMetrics'
+        strategy:
+          title: Strategy
+          type: string
+        symbol:
+          title: Symbol
+          type: string
+        trades:
+          items:
+            $ref: '#/components/schemas/BacktestTrade'
+          title: Trades
+          type: array
+      required:
+      - symbol
+      - bars
+      - strategy
+      - metrics
+      - equity_curve
+      - trades
+      title: BacktestReport
+      type: object
+    BacktestRequest:
+      properties:
+        initial_capital:
+          default: 10000.0
+          exclusiveMinimum: 0.0
+          title: Initial Capital
+          type: number
+        period:
+          default: 1y
+          title: Period
+          type: string
+        rsi_buy:
+          default: 30.0
+          maximum: 99.0
+          minimum: 1.0
+          title: Rsi Buy
+          type: number
+        rsi_sell:
+          default: 70.0
+          maximum: 99.0
+          minimum: 1.0
+          title: Rsi Sell
+          type: number
+        symbol:
+          maxLength: 20
+          minLength: 1
+          title: Symbol
+          type: string
+        warmup:
+          default: 20
+          maximum: 200.0
+          minimum: 1.0
+          title: Warmup
+          type: integer
+      required:
+      - symbol
+      title: BacktestRequest
+      type: object
+    BacktestRunPage:
+      properties:
+        items:
+          default: []
+          items:
+            $ref: '#/components/schemas/BacktestRunSummary'
+          title: Items
+          type: array
+        limit:
+          title: Limit
+          type: integer
+        offset:
+          title: Offset
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - total
+      - limit
+      - offset
+      title: BacktestRunPage
+      type: object
+    BacktestRunSummary:
+      description: 'A history row: enough to rank and choose, without the curve.'
+      properties:
+        bars:
+          title: Bars
+          type: integer
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          title: Id
+          type: integer
+        initial_capital:
+          title: Initial Capital
+          type: number
+        metrics:
+          $ref: '#/components/schemas/BacktestMetrics'
+        period:
+          title: Period
+          type: string
+        rsi_buy:
+          title: Rsi Buy
+          type: number
+        rsi_sell:
+          title: Rsi Sell
+          type: number
+        strategy:
+          title: Strategy
+          type: string
+        symbol:
+          title: Symbol
+          type: string
+      required:
+      - id
+      - symbol
+      - strategy
+      - period
+      - initial_capital
+      - rsi_buy
+      - rsi_sell
+      - bars
+      - metrics
+      - created_at
+      title: BacktestRunSummary
+      type: object
+    BacktestTrade:
+      properties:
+        entry_price:
+          title: Entry Price
+          type: number
+        exit_index:
+          title: Exit Index
+          type: integer
+        exit_price:
+          title: Exit Price
+          type: number
+        pnl:
+          title: Pnl
+          type: number
+        quantity:
+          title: Quantity
+          type: number
+        return_pct:
+          title: Return Pct
+          type: number
+      required:
+      - entry_price
+      - exit_price
+      - quantity
+      - pnl
+      - return_pct
+      - exit_index
+      title: BacktestTrade
+      type: object
+    BrokerOrder:
+      description: Normalized broker order response.
+      properties:
+        filled_avg_price:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Filled Avg Price
+        filled_quantity:
+          default: 0.0
+          title: Filled Quantity
+          type: number
+        id:
+          title: Id
+          type: string
+        order_type:
+          title: Order Type
+          type: string
+        quantity:
+          title: Quantity
+          type: number
+        side:
+          enum:
+          - buy
+          - sell
+          title: Side
+          type: string
+        status:
+          title: Status
+          type: string
+        submitted_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Submitted At
+        symbol:
+          title: Symbol
+          type: string
+      required:
+      - id
+      - symbol
+      - side
+      - quantity
+      - order_type
+      - status
+      title: BrokerOrder
+      type: object
+    ConfidenceBucket:
+      description: Aggregate over signals whose confidence fell in [lower, upper).
+      properties:
+        avg_return_pct:
+          title: Avg Return Pct
+          type: number
+        hit_rate_pct:
+          title: Hit Rate Pct
+          type: number
+        label:
+          title: Label
+          type: string
+        lower:
+          title: Lower
+          type: number
+        signals:
+          title: Signals
+          type: integer
+        total_pnl:
+          title: Total Pnl
+          type: number
+        upper:
+          title: Upper
+          type: number
+      required:
+      - label
+      - lower
+      - upper
+      - signals
+      - hit_rate_pct
+      - avg_return_pct
+      - total_pnl
+      title: ConfidenceBucket
+      type: object
+    CorrelationMatrix:
+      description: N x N Pearson correlation of daily returns across active holdings.
+      properties:
+        matrix:
+          items:
+            items:
+              type: number
+            type: array
+          title: Matrix
+          type: array
+        symbols:
+          items:
+            type: string
+          title: Symbols
+          type: array
+      required:
+      - symbols
+      - matrix
+      title: CorrelationMatrix
+      type: object
+    CredentialCreate:
+      properties:
+        api_key:
+          maxLength: 256
+          minLength: 1
+          title: Api Key
+          type: string
+        api_secret:
+          maxLength: 256
+          minLength: 1
+          title: Api Secret
+          type: string
+        broker:
+          const: alpaca
+          default: alpaca
+          title: Broker
+          type: string
+        paper:
+          default: true
+          title: Paper
+          type: boolean
+      required:
+      - api_key
+      - api_secret
+      title: CredentialCreate
+      type: object
+    CredentialRead:
+      description: Safe projection — NEVER exposes secrets, only a last-4 fingerprint.
+      properties:
+        api_key_last4:
+          title: Api Key Last4
+          type: string
+        broker:
+          title: Broker
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        paper:
+          title: Paper
+          type: boolean
+      required:
+      - broker
+      - paper
+      - created_at
+      - api_key_last4
+      title: CredentialRead
+      type: object
+    DependencyCheck:
+      properties:
+        detail:
+          default: ''
+          title: Detail
+          type: string
+        name:
+          title: Name
+          type: string
+        ok:
+          title: Ok
+          type: boolean
+        required:
+          title: Required
+          type: boolean
+      required:
+      - name
+      - ok
+      - required
+      title: DependencyCheck
+      type: object
+    DriftItem:
+      properties:
+        broker_quantity:
+          title: Broker Quantity
+          type: number
+        drift:
+          title: Drift
+          type: number
+        ledger_quantity:
+          title: Ledger Quantity
+          type: number
+        symbol:
+          title: Symbol
+          type: string
+      required:
+      - symbol
+      - broker_quantity
+      - ledger_quantity
+      - drift
+      title: DriftItem
+      type: object
+    DriftReport:
+      properties:
+        in_sync:
+          title: In Sync
+          type: boolean
+        items:
+          default: []
+          items:
+            $ref: '#/components/schemas/DriftItem'
+          title: Items
+          type: array
+      required:
+      - in_sync
+      title: DriftReport
+      type: object
+    EquityCurvePoint:
+      properties:
+        date:
+          title: Date
+          type: string
+        equity:
+          title: Equity
+          type: number
+      required:
+      - date
+      - equity
+      title: EquityCurvePoint
+      type: object
+    EquityPoint:
+      properties:
+        equity:
+          title: Equity
+          type: number
+        index:
+          title: Index
+          type: integer
+      required:
+      - index
+      - equity
+      title: EquityPoint
+      type: object
+    EventResponse:
+      properties:
+        events:
+          items:
+            $ref: '#/components/schemas/MarketEvent'
+          title: Events
+          type: array
+      required:
+      - events
+      title: EventResponse
+      type: object
+    Fundamentals:
+      description: Fundamental valuation metrics (best-effort; any field may be None).
+      properties:
+        debt_to_equity:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Debt To Equity
+        earnings_date:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Earnings Date
+        ev_ebitda:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Ev Ebitda
+        pe_ratio:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Pe Ratio
+        short_ratio:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Short Ratio
+      title: Fundamentals
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    Holding:
+      description: Reconstructed net position for one symbol (avg-cost basis).
+      properties:
+        avg_cost:
+          title: Avg Cost
+          type: number
+        quantity:
+          title: Quantity
+          type: number
+        realized_pnl:
+          title: Realized Pnl
+          type: number
+        symbol:
+          title: Symbol
+          type: string
+      required:
+      - symbol
+      - quantity
+      - avg_cost
+      - realized_pnl
+      title: Holding
+      type: object
+    Indicators:
+      properties:
+        ema_12:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Ema 12
+        macd:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Macd
+        macd_signal:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Macd Signal
+        rsi_14:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Rsi 14
+        sma_20:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Sma 20
+        sma_50:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Sma 50
+        volatility_annual:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Volatility Annual
+      title: Indicators
+      type: object
+    KillSwitchStatus:
+      properties:
+        canceled_orders:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Canceled Orders
+        current_equity:
+          title: Current Equity
+          type: number
+        daily_loss_limit_pct:
+          title: Daily Loss Limit Pct
+          type: number
+        drawdown_pct:
+          title: Drawdown Pct
+          type: number
+        halted:
+          title: Halted
+          type: boolean
+        manual_halt:
+          default: false
+          title: Manual Halt
+          type: boolean
+        opening_equity:
+          title: Opening Equity
+          type: number
+        reason:
+          default: ''
+          title: Reason
+          type: string
+      required:
+      - halted
+      - daily_loss_limit_pct
+      - opening_equity
+      - current_equity
+      - drawdown_pct
+      title: KillSwitchStatus
+      type: object
+    KillSwitchToggle:
+      properties:
+        cancel_open:
+          default: true
+          title: Cancel Open
+          type: boolean
+        enabled:
+          title: Enabled
+          type: boolean
+      required:
+      - enabled
+      title: KillSwitchToggle
+      type: object
+    LogoutRequest:
+      properties:
+        refresh_token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Refresh Token
+      title: LogoutRequest
+      type: object
+    MarketData:
+      description: Returned instantly by /api/market/{symbol} — no AI in the hot path.
+      properties:
+        fundamentals:
+          anyOf:
+          - $ref: '#/components/schemas/Fundamentals'
+          - type: 'null'
+        indicators:
+          $ref: '#/components/schemas/Indicators'
+        quote:
+          $ref: '#/components/schemas/Quote'
+      required:
+      - quote
+      - indicators
+      title: MarketData
+      type: object
+    MarketEvent:
+      properties:
+        blocking:
+          default: false
+          title: Blocking
+          type: boolean
+        category:
+          enum:
+          - LEGAL_RISK
+          - MACRO_POLICY
+          - TECH_CATALYST
+          - EXECUTIVE_SENTIMENT
+          title: Category
+          type: string
+        link:
+          default: ''
+          title: Link
+          type: string
+        orientation:
+          enum:
+          - BULLISH
+          - BEARISH
+          - HIGH_VOLATILITY
+          - NEUTRAL
+          title: Orientation
+          type: string
+        published:
+          default: ''
+          title: Published
+          type: string
+        severity:
+          maximum: 10.0
+          minimum: 1.0
+          title: Severity
+          type: integer
+        source:
+          default: ''
+          title: Source
+          type: string
+        title:
+          title: Title
+          type: string
+      required:
+      - title
+      - category
+      - severity
+      - orientation
+      title: MarketEvent
+      type: object
+    NewsInsight:
+      properties:
+        degraded:
+          default: false
+          title: Degraded
+          type: boolean
+        key_points:
+          default: []
+          items:
+            type: string
+          title: Key Points
+          type: array
+        sentiment:
+          default: neutral
+          enum:
+          - positive
+          - neutral
+          - negative
+          title: Sentiment
+          type: string
+        summary:
+          default: ''
+          title: Summary
+          type: string
+      title: NewsInsight
+      type: object
+    NewsResponse:
+      description: 'Instant response: raw articles, no AI.'
+      properties:
+        articles:
+          items:
+            $ref: '#/components/schemas/Article'
+          title: Articles
+          type: array
+        query:
+          title: Query
+          type: string
+      required:
+      - query
+      - articles
+      title: NewsResponse
+      type: object
+    OptimizationReport:
+      description: Max-Sharpe target allocation vs. the current book.
+      properties:
+        annual_volatility:
+          title: Annual Volatility
+          type: number
+        concentration_hhi:
+          title: Concentration Hhi
+          type: number
+        expected_annual_return:
+          title: Expected Annual Return
+          type: number
+        method:
+          title: Method
+          type: string
+        samples_evaluated:
+          title: Samples Evaluated
+          type: integer
+        sharpe_ratio:
+          title: Sharpe Ratio
+          type: number
+        symbols:
+          items:
+            type: string
+          title: Symbols
+          type: array
+        weights:
+          items:
+            $ref: '#/components/schemas/OptimizedWeight'
+          title: Weights
+          type: array
+      required:
+      - method
+      - symbols
+      - weights
+      - expected_annual_return
+      - annual_volatility
+      - sharpe_ratio
+      - concentration_hhi
+      - samples_evaluated
+      title: OptimizationReport
+      type: object
+    OptimizedWeight:
+      properties:
+        current_weight:
+          title: Current Weight
+          type: number
+        symbol:
+          title: Symbol
+          type: string
+        target_weight:
+          title: Target Weight
+          type: number
+      required:
+      - symbol
+      - current_weight
+      - target_weight
+      title: OptimizedWeight
+      type: object
+    OrderAmendment:
+      description: 'A requested change to a working order.
+
+
+        Both fields are optional but at least one must be present - an amendment
+
+        that changes nothing is a round-trip to the venue that can only lose queue
+
+        position, so it is rejected rather than forwarded.'
+      properties:
+        limit_price:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: number
+          - type: 'null'
+          title: Limit Price
+        quantity:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: number
+          - type: 'null'
+          title: Quantity
+      title: OrderAmendment
+      type: object
+    OrderRead:
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        filled_avg_price:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Filled Avg Price
+        filled_quantity:
+          title: Filled Quantity
+          type: number
+        id:
+          title: Id
+          type: integer
+        quantity:
+          title: Quantity
+          type: number
+        reconciled:
+          title: Reconciled
+          type: boolean
+        side:
+          title: Side
+          type: string
+        status:
+          title: Status
+          type: string
+        symbol:
+          title: Symbol
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - symbol
+      - side
+      - quantity
+      - status
+      - filled_quantity
+      - reconciled
+      - created_at
+      - updated_at
+      title: OrderRead
+      type: object
+    PerformanceReport:
+      properties:
+        absolute_return:
+          default: 0.0
+          title: Absolute Return
+          type: number
+        basis:
+          default: 'daily opening equity: marked positions + realized P&L'
+          title: Basis
+          type: string
+        best_day_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Best Day Pct
+        covered_days:
+          title: Covered Days
+          type: integer
+        current_equity:
+          default: 0.0
+          title: Current Equity
+          type: number
+        max_drawdown_pct:
+          default: 0.0
+          title: Max Drawdown Pct
+          type: number
+        points:
+          default: []
+          items:
+            $ref: '#/components/schemas/EquityCurvePoint'
+          title: Points
+          type: array
+        return_pct:
+          default: 0.0
+          title: Return Pct
+          type: number
+        span_days:
+          title: Span Days
+          type: integer
+        sparse:
+          title: Sparse
+          type: boolean
+        start_equity:
+          default: 0.0
+          title: Start Equity
+          type: number
+        worst_day_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Worst Day Pct
+      required:
+      - covered_days
+      - span_days
+      - sparse
+      title: PerformanceReport
+      type: object
+    PositionRisk:
+      properties:
+        avg_cost:
+          title: Avg Cost
+          type: number
+        current_price:
+          title: Current Price
+          type: number
+        market_value:
+          title: Market Value
+          type: number
+        max_drawdown_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Max Drawdown Pct
+        pnl_pct:
+          title: Pnl Pct
+          type: number
+        quantity:
+          title: Quantity
+          type: number
+        realized_pnl:
+          title: Realized Pnl
+          type: number
+        symbol:
+          title: Symbol
+          type: string
+        unrealized_pnl:
+          title: Unrealized Pnl
+          type: number
+        var_95_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Var 95 Pct
+        volatility_annual:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Volatility Annual
+        weight_pct:
+          title: Weight Pct
+          type: number
+      required:
+      - symbol
+      - quantity
+      - avg_cost
+      - current_price
+      - market_value
+      - realized_pnl
+      - unrealized_pnl
+      - pnl_pct
+      - weight_pct
+      title: PositionRisk
+      type: object
+    Quote:
+      properties:
+        change_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Change Pct
+        currency:
+          default: USD
+          title: Currency
+          type: string
+        price:
+          title: Price
+          type: number
+        symbol:
+          title: Symbol
+          type: string
+      required:
+      - symbol
+      - price
+      title: Quote
+      type: object
+    ReadinessReport:
+      properties:
+        checks:
+          default: []
+          items:
+            $ref: '#/components/schemas/DependencyCheck'
+          title: Checks
+          type: array
+        degraded:
+          title: Degraded
+          type: boolean
+        ready:
+          title: Ready
+          type: boolean
+      required:
+      - ready
+      - degraded
+      title: ReadinessReport
+      type: object
+    RefreshRequest:
+      properties:
+        refresh_token:
+          title: Refresh Token
+          type: string
+      required:
+      - refresh_token
+      title: RefreshRequest
+      type: object
+    RiskConfigRead:
+      properties:
+        daily_loss_limit_pct:
+          title: Daily Loss Limit Pct
+          type: number
+      required:
+      - daily_loss_limit_pct
+      title: RiskConfigRead
+      type: object
+    RiskConfigUpdate:
+      properties:
+        daily_loss_limit_pct:
+          maximum: 100.0
+          minimum: 0.0
+          title: Daily Loss Limit Pct
+          type: number
+      required:
+      - daily_loss_limit_pct
+      title: RiskConfigUpdate
+      type: object
+    RiskReport:
+      properties:
+        positions:
+          items:
+            $ref: '#/components/schemas/PositionRisk'
+          title: Positions
+          type: array
+        total_realized_pnl:
+          title: Total Realized Pnl
+          type: number
+        total_unrealized_pnl:
+          title: Total Unrealized Pnl
+          type: number
+        total_value:
+          title: Total Value
+          type: number
+      required:
+      - total_value
+      - total_realized_pnl
+      - total_unrealized_pnl
+      - positions
+      title: RiskReport
+      type: object
+    Signal:
+      properties:
+        action:
+          default: HOLD
+          enum:
+          - BUY
+          - SELL
+          - HOLD
+          title: Action
+          type: string
+        citations:
+          default: []
+          items:
+            type: string
+          title: Citations
+          type: array
+        confidence:
+          default: 0.0
+          title: Confidence
+          type: number
+        degraded:
+          default: false
+          title: Degraded
+          type: boolean
+        disclaimer:
+          default: Bu bir yatirim tavsiyesi degildir.
+          title: Disclaimer
+          type: string
+        rationale:
+          default: ''
+          title: Rationale
+          type: string
+      title: Signal
+      type: object
+    SignalOutcome:
+      description: One filled signal, scored against where the symbol trades now.
+      properties:
+        confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Confidence
+        correct:
+          title: Correct
+          type: boolean
+        executed_at:
+          format: date-time
+          title: Executed At
+          type: string
+        fill_price:
+          title: Fill Price
+          type: number
+        order_id:
+          title: Order Id
+          type: string
+        pnl:
+          title: Pnl
+          type: number
+        quantity:
+          title: Quantity
+          type: number
+        reference_price:
+          title: Reference Price
+          type: number
+        return_pct:
+          title: Return Pct
+          type: number
+        signal_type:
+          title: Signal Type
+          type: string
+        symbol:
+          title: Symbol
+          type: string
+      required:
+      - order_id
+      - symbol
+      - signal_type
+      - executed_at
+      - fill_price
+      - quantity
+      - reference_price
+      - return_pct
+      - pnl
+      - correct
+      title: SignalOutcome
+      type: object
+    SignalScorecard:
+      properties:
+        avg_return_pct:
+          title: Avg Return Pct
+          type: number
+        basis:
+          default: mark-to-market against the latest quote; unrealized
+          title: Basis
+          type: string
+        best:
+          anyOf:
+          - $ref: '#/components/schemas/SignalOutcome'
+          - type: 'null'
+        buckets:
+          default: []
+          items:
+            $ref: '#/components/schemas/ConfidenceBucket'
+          title: Buckets
+          type: array
+        calibration_note:
+          default: ''
+          title: Calibration Note
+          type: string
+        degraded:
+          default: false
+          title: Degraded
+          type: boolean
+        disclaimer:
+          default: Gecmis performans gelecegi garanti etmez.
+          title: Disclaimer
+          type: string
+        evaluated:
+          title: Evaluated
+          type: integer
+        hit_rate_pct:
+          title: Hit Rate Pct
+          type: number
+        skipped_unfilled:
+          title: Skipped Unfilled
+          type: integer
+        skipped_unpriced:
+          title: Skipped Unpriced
+          type: integer
+        total_pnl:
+          title: Total Pnl
+          type: number
+        worst:
+          anyOf:
+          - $ref: '#/components/schemas/SignalOutcome'
+          - type: 'null'
+      required:
+      - evaluated
+      - skipped_unfilled
+      - skipped_unpriced
+      - hit_rate_pct
+      - avg_return_pct
+      - total_pnl
+      title: SignalScorecard
+      type: object
+    TokenPair:
+      properties:
+        access_token:
+          title: Access Token
+          type: string
+        refresh_token:
+          title: Refresh Token
+          type: string
+        token_type:
+          default: bearer
+          title: Token Type
+          type: string
+      required:
+      - access_token
+      - refresh_token
+      title: TokenPair
+      type: object
+    TradeDeckState:
+      description: Everything the trading UI needs to render in one typed payload.
+      properties:
+        has_credentials:
+          title: Has Credentials
+          type: boolean
+        kill_switch:
+          $ref: '#/components/schemas/KillSwitchStatus'
+        max_order_notional:
+          title: Max Order Notional
+          type: number
+        min_trade_confidence:
+          title: Min Trade Confidence
+          type: number
+        open_orders:
+          title: Open Orders
+          type: integer
+        risk_config:
+          $ref: '#/components/schemas/RiskConfigRead'
+        trade_enabled:
+          title: Trade Enabled
+          type: boolean
+        ws:
+          $ref: '#/components/schemas/WsContract'
+          default:
+            auth: query param 'token' = access JWT (type=access)
+            frames:
+            - start
+            - token
+            - end
+            - error
+            - alert
+            insights_path: /ws/insights/{symbol}
+      required:
+      - has_credentials
+      - open_orders
+      - kill_switch
+      - risk_config
+      - max_order_notional
+      - min_trade_confidence
+      - trade_enabled
+      title: TradeDeckState
+      type: object
+    TradeRequest:
+      description: An execution request derived from an AI signal.
+      properties:
+        action:
+          enum:
+          - BUY
+          - SELL
+          - HOLD
+          title: Action
+          type: string
+        ai_context:
+          anyOf:
+          - maxLength: 4000
+            type: string
+          - type: 'null'
+          title: Ai Context
+        confidence:
+          anyOf:
+          - maximum: 1.0
+            minimum: 0.0
+            type: number
+          - type: 'null'
+          title: Confidence
+        idempotency_key:
+          anyOf:
+          - maxLength: 64
+            minLength: 8
+            pattern: ^[A-Za-z0-9_-]+$
+            type: string
+          - type: 'null'
+          title: Idempotency Key
+        limit_price:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: number
+          - type: 'null'
+          title: Limit Price
+        order_type:
+          default: market
+          enum:
+          - market
+          - limit
+          title: Order Type
+          type: string
+        quantity:
+          exclusiveMinimum: 0.0
+          title: Quantity
+          type: number
+        symbol:
+          maxLength: 20
+          minLength: 1
+          title: Symbol
+          type: string
+        time_in_force:
+          default: day
+          enum:
+          - day
+          - gtc
+          - ioc
+          - fok
+          title: Time In Force
+          type: string
+      required:
+      - symbol
+      - action
+      - quantity
+      title: TradeRequest
+      type: object
+    TradeResult:
+      properties:
+        accepted:
+          title: Accepted
+          type: boolean
+        disclaimer:
+          default: Paper trading — bu bir yatirim tavsiyesi degildir.
+          title: Disclaimer
+          type: string
+        duplicate:
+          default: false
+          title: Duplicate
+          type: boolean
+        message:
+          default: ''
+          title: Message
+          type: string
+        order:
+          anyOf:
+          - $ref: '#/components/schemas/BrokerOrder'
+          - type: 'null'
+      required:
+      - accepted
+      title: TradeResult
+      type: object
+    TransactionCreate:
+      properties:
+        action:
+          enum:
+          - BUY
+          - SELL
+          title: Action
+          type: string
+        price:
+          exclusiveMinimum: 0.0
+          title: Price
+          type: number
+        quantity:
+          exclusiveMinimum: 0.0
+          title: Quantity
+          type: number
+        symbol:
+          maxLength: 20
+          minLength: 1
+          title: Symbol
+          type: string
+      required:
+      - symbol
+      - action
+      - quantity
+      - price
+      title: TransactionCreate
+      type: object
+    TransactionRead:
+      properties:
+        action:
+          enum:
+          - BUY
+          - SELL
+          title: Action
+          type: string
+        id:
+          title: Id
+          type: integer
+        price:
+          title: Price
+          type: number
+        quantity:
+          title: Quantity
+          type: number
+        symbol:
+          title: Symbol
+          type: string
+        timestamp:
+          format: date-time
+          title: Timestamp
+          type: string
+      required:
+      - id
+      - symbol
+      - action
+      - quantity
+      - price
+      - timestamp
+      title: TransactionRead
+      type: object
+    UserCreate:
+      properties:
+        email:
+          maxLength: 254
+          minLength: 3
+          title: Email
+          type: string
+        password:
+          maxLength: 128
+          minLength: 8
+          title: Password
+          type: string
+      required:
+      - email
+      - password
+      title: UserCreate
+      type: object
+    UserLogin:
+      properties:
+        email:
+          title: Email
+          type: string
+        password:
+          title: Password
+          type: string
+      required:
+      - email
+      - password
+      title: UserLogin
+      type: object
+    UserRead:
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        email:
+          title: Email
+          type: string
+        id:
+          title: Id
+          type: integer
+      required:
+      - id
+      - email
+      - created_at
+      title: UserRead
+      type: object
+    ValidationError:
+      properties:
+        ctx:
+          title: Context
+          type: object
+        input:
+          title: Input
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+    WebhookOrder:
+      description: The nested ``order`` object of an Alpaca trade-update event.
+      properties:
+        filled_avg_price:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Filled Avg Price
+        filled_qty:
+          default: 0.0
+          title: Filled Qty
+          type: number
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        side:
+          default: ''
+          title: Side
+          type: string
+        status:
+          default: ''
+          title: Status
+          type: string
+        symbol:
+          default: ''
+          title: Symbol
+          type: string
+      required:
+      - id
+      title: WebhookOrder
+      type: object
+    WebhookResult:
+      properties:
+        accepted:
+          title: Accepted
+          type: boolean
+        detail:
+          default: ''
+          title: Detail
+          type: string
+        reconciled:
+          default: false
+          title: Reconciled
+          type: boolean
+      required:
+      - accepted
+      title: WebhookResult
+      type: object
+    WsContract:
+      properties:
+        auth:
+          default: query param 'token' = access JWT (type=access)
+          title: Auth
+          type: string
+        frames:
+          default:
+          - start
+          - token
+          - end
+          - error
+          - alert
+          items:
+            type: string
+          title: Frames
+          type: array
+        insights_path:
+          default: /ws/insights/{symbol}
+          title: Insights Path
+          type: string
+      title: WsContract
+      type: object
+  securitySchemes:
+    HTTPBearer:
+      scheme: bearer
+      type: http
+info:
+  description: 'AI-assisted market intelligence and paper-trading execution platform.
+
+
+    Every AI-backed endpoint degrades safely: with no model key configured the quantitative readings still
+    return and responses are flagged `degraded`. Outputs are research signals, not investment advice.'
+  title: AI Finance Intelligence
+  version: 0.5.0
+openapi: 3.1.0
+paths:
+  /api/alerts:
+    get:
+      operationId: list_alerts_api_alerts_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AlertRead'
+                title: Response List Alerts Api Alerts Get
+                type: array
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: List Alerts
+      tags:
+      - alerts
+    post:
+      operationId: create_alert_api_alerts_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Create Alert
+      tags:
+      - alerts
+  /api/alerts/{alert_id}:
+    delete:
+      operationId: delete_alert_api_alerts__alert_id__delete
+      parameters:
+      - in: path
+        name: alert_id
+        required: true
+        schema:
+          title: Alert Id
+          type: integer
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Delete Alert
+      tags:
+      - alerts
+  /api/auth/login:
+    post:
+      operationId: login_api_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLogin'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Login
+      tags:
+      - auth
+  /api/auth/logout:
+    post:
+      operationId: logout_api_auth_logout_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Logout
+      tags:
+      - auth
+  /api/auth/refresh:
+    post:
+      operationId: refresh_api_auth_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Refresh
+      tags:
+      - auth
+  /api/auth/register:
+    post:
+      operationId: register_api_auth_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Register
+      tags:
+      - auth
+  /api/backtest/run:
+    post:
+      description: 'Historical simulation: metrics summary + equity curve for the symbol.
+
+
+        The run is saved and the report comes back carrying its ``id``, so a result
+
+        worth revisiting does not have to be re-simulated to be seen again.'
+      operationId: run_backtest_api_backtest_run_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BacktestRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacktestReport'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Run Backtest
+      tags:
+      - backtest
+  /api/backtest/runs:
+    get:
+      description: Saved runs, newest first, without the equity curve.
+      operationId: list_runs_api_backtest_runs_get
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      - in: query
+        name: symbol
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 20
+            type: string
+          - type: 'null'
+          title: Symbol
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacktestRunPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List Runs
+      tags:
+      - backtest
+  /api/backtest/runs/compare:
+    get:
+      description: Several runs side by side, plus the leader on each metric.
+      operationId: compare_runs_api_backtest_runs_compare_get
+      parameters:
+      - description: Comma-separated run ids, e.g. 4,7,9
+        in: query
+        name: ids
+        required: true
+        schema:
+          description: Comma-separated run ids, e.g. 4,7,9
+          title: Ids
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacktestComparison'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Compare Runs
+      tags:
+      - backtest
+  /api/backtest/runs/{run_id}:
+    delete:
+      operationId: delete_run_api_backtest_runs__run_id__delete
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: integer
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Delete Run
+      tags:
+      - backtest
+    get:
+      description: One stored run in full, curve and trades included.
+      operationId: get_run_api_backtest_runs__run_id__get
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacktestReport'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Get Run
+      tags:
+      - backtest
+  /api/events:
+    get:
+      description: Ranked, categorized events (legal/macro/tech/executive) with impact scores.
+      operationId: list_events_api_events_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: List Events
+      tags:
+      - events
+  /api/market/{symbol}:
+    get:
+      operationId: market_data_api_market__symbol__get
+      parameters:
+      - in: path
+        name: symbol
+        required: true
+        schema:
+          title: Symbol
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketData'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Market Data
+      tags:
+      - market
+  /api/market/{symbol}/ai-insights:
+    get:
+      operationId: market_ai_insights_api_market__symbol__ai_insights_get
+      parameters:
+      - in: path
+        name: symbol
+        required: true
+        schema:
+          title: Symbol
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Signal'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Market Ai Insights
+      tags:
+      - market
+  /api/meta/contracts:
+    get:
+      description: Typed JSON contracts so the UI can bind to a single source of truth.
+      operationId: contracts_api_meta_contracts_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiContracts'
+          description: Successful Response
+      summary: Contracts
+      tags:
+      - meta
+  /api/news:
+    get:
+      operationId: news_api_news_get
+      parameters:
+      - in: query
+        name: query
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: Query
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 10
+          maximum: 25
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: News
+      tags:
+      - news
+  /api/news/ai-insights:
+    get:
+      operationId: news_ai_insights_api_news_ai_insights_get
+      parameters:
+      - in: query
+        name: query
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: Query
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 10
+          maximum: 25
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsInsight'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: News Ai Insights
+      tags:
+      - news
+  /api/portfolio:
+    get:
+      description: Current net positions reconstructed from the ledger.
+      operationId: holdings_api_portfolio_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Holding'
+                title: Response Holdings Api Portfolio Get
+                type: array
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Holdings
+      tags:
+      - portfolio
+  /api/portfolio/correlation:
+    get:
+      description: N x N return-correlation matrix across the user's active holdings.
+      operationId: correlation_api_portfolio_correlation_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrelationMatrix'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Correlation
+      tags:
+      - portfolio
+  /api/portfolio/export/transactions:
+    get:
+      description: 'The FULL ledger as CSV, for tax filing and audit.
+
+
+        Deliberately unpaginated: a partial export is worse than none for the
+
+        purpose, and this is a download rather than a UI read. Cells are escaped
+
+        against spreadsheet formula injection on the way out.'
+      operationId: export_transactions_api_portfolio_export_transactions_get
+      responses:
+        '200':
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Export Transactions
+      tags:
+      - portfolio
+  /api/portfolio/optimize:
+    get:
+      description: Markowitz max-Sharpe target weights vs. the current allocation.
+      operationId: optimize_api_portfolio_optimize_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizationReport'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Optimize
+      tags:
+      - portfolio
+  /api/portfolio/performance:
+    get:
+      description: 'Equity curve, return, and max drawdown from the daily equity snapshots.
+
+
+        Snapshots are captured lazily (once per active UTC day), so the series can
+
+        have gaps; `sparse` flags that, and the gaps are left unobserved rather
+
+        than interpolated flat.'
+      operationId: performance_api_portfolio_performance_get
+      parameters:
+      - in: query
+        name: days
+        required: false
+        schema:
+          default: 365
+          maximum: 3650
+          minimum: 1
+          title: Days
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceReport'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Performance
+      tags:
+      - portfolio
+  /api/portfolio/risk:
+    get:
+      description: Instant quant risk + realized/unrealized P&L from the ledger.
+      operationId: risk_report_api_portfolio_risk_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskReport'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Risk Report
+      tags:
+      - portfolio
+  /api/portfolio/risk/ai-insights:
+    get:
+      operationId: risk_ai_insights_api_portfolio_risk_ai_insights_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Advice'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Risk Ai Insights
+      tags:
+      - portfolio
+  /api/portfolio/transactions:
+    get:
+      description: 'A page of the ledger, oldest first.
+
+
+        Bounded by default so one account''s history can never be an unbounded
+
+        query. `X-Total-Count` carries the full size, so a client can tell a
+
+        complete answer from a truncated one without the response shape changing.'
+      operationId: list_transactions_api_portfolio_transactions_get
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 200
+          maximum: 1000
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TransactionRead'
+                title: Response List Transactions Api Portfolio Transactions Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List Transactions
+      tags:
+      - portfolio
+    post:
+      operationId: record_transaction_api_portfolio_transactions_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Record Transaction
+      tags:
+      - portfolio
+  /api/trade/audit:
+    get:
+      description: 'The append-only compliance trail: every signal that became an order.
+
+
+        Scoped to the caller — the audit log is per-user and there is no operator
+
+        view here, so no user can ever read another''s reasoning or positions.'
+      operationId: list_audit_log_api_trade_audit_get
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      - in: query
+        name: symbol
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 20
+            type: string
+          - type: 'null'
+          title: Symbol
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogPage'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List Audit Log
+      tags:
+      - trade
+  /api/trade/credentials:
+    get:
+      operationId: read_credentials_api_trade_credentials_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialRead'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Read Credentials
+      tags:
+      - trade
+    post:
+      description: Store broker API keys ENCRYPTED at rest. Secrets are never returned.
+      operationId: save_credentials_api_trade_credentials_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Save Credentials
+      tags:
+      - trade
+  /api/trade/deck:
+    get:
+      description: One unified, typed payload for the trading UI.
+      operationId: trade_deck_api_trade_deck_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeDeckState'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Trade Deck
+      tags:
+      - trade
+  /api/trade/execute:
+    post:
+      description: Validate the user's risk limits, then place a paper order from an AI signal.
+      operationId: execute_trade_api_trade_execute_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TradeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeResult'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Execute Trade
+      tags:
+      - trade
+  /api/trade/export/audit:
+    get:
+      description: 'The full compliance trail as CSV.
+
+
+        Carries the model''s reasoning verbatim, which is exactly the untrusted
+
+        free text that makes formula escaping non-optional here.'
+      operationId: export_audit_log_api_trade_export_audit_get
+      responses:
+        '200':
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Export Audit Log
+      tags:
+      - trade
+  /api/trade/kill-switch:
+    get:
+      operationId: kill_switch_status_api_trade_kill_switch_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KillSwitchStatus'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Kill Switch Status
+      tags:
+      - trade
+    post:
+      description: 'Operator toggle: manually halt (enabled=True) or resume automated trading.
+
+
+        Halting also flattens working orders unless ``cancel_open`` is false. The
+
+        halt is written FIRST so no new order can slip in behind the cancellations,
+
+        and the flatten is best-effort: a venue that refuses one cancel must not
+
+        leave the switch un-pulled.'
+      operationId: toggle_kill_switch_api_trade_kill_switch_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KillSwitchToggle'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KillSwitchStatus'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Toggle Kill Switch
+      tags:
+      - trade
+  /api/trade/orders:
+    get:
+      description: 'A page of submitted orders and their reconciliation state.
+
+
+        `X-Total-Count` reports the full size so truncation is detectable.'
+      operationId: list_orders_api_trade_orders_get
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 200
+          maximum: 1000
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/OrderRead'
+                title: Response List Orders Api Trade Orders Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List Orders
+      tags:
+      - trade
+  /api/trade/orders/{order_id}:
+    delete:
+      description: 'Request cancellation of one working order.
+
+
+        Returns the order in ``pending_cancel``: the venue has accepted the request,
+
+        but the order is not dead until reconciliation says so. 409 when the order
+
+        already reached a terminal state, 404 when it is not this user''s.'
+      operationId: cancel_order_api_trade_orders__order_id__delete
+      parameters:
+      - in: path
+        name: order_id
+        required: true
+        schema:
+          title: Order Id
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Cancel Order
+      tags:
+      - trade
+    get:
+      description: One submitted order and its reconciliation state.
+      operationId: get_order_api_trade_orders__order_id__get
+      parameters:
+      - in: path
+        name: order_id
+        required: true
+        schema:
+          title: Order Id
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Get Order
+      tags:
+      - trade
+    patch:
+      description: 'Amend a working order''s size or limit price, keeping its queue position.
+
+
+        The venue retires the original and issues a replacement, so the RESPONSE IS
+
+        THE NEW ORDER, with a new id. 409 when the order is past amending, 423 when
+
+        the kill-switch is engaged.'
+      operationId: replace_order_api_trade_orders__order_id__patch
+      parameters:
+      - in: path
+        name: order_id
+        required: true
+        schema:
+          title: Order Id
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderAmendment'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Replace Order
+      tags:
+      - trade
+  /api/trade/reconciliation:
+    get:
+      description: On-demand broker-vs-ledger position drift for the current user.
+      operationId: position_reconciliation_api_trade_reconciliation_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftReport'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Position Reconciliation
+      tags:
+      - trade
+  /api/trade/risk-config:
+    get:
+      operationId: get_risk_config_api_trade_risk_config_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskConfigRead'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Get Risk Config
+      tags:
+      - trade
+    post:
+      description: Set the daily-loss kill-switch threshold (percent; 0 disables).
+      operationId: set_risk_config_api_trade_risk_config_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RiskConfigUpdate'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskConfigRead'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Set Risk Config
+      tags:
+      - trade
+  /api/trade/signal-scorecard:
+    get:
+      description: 'Did following the AI signals actually make money?
+
+
+        Marks every filled signal against the latest quote and reports the hit rate
+
+        by confidence bucket, so `min_trade_confidence` can be judged on evidence
+
+        rather than taste. Unrealized by construction — see `basis` on the payload.'
+      operationId: signal_scorecard_api_trade_signal_scorecard_get
+      parameters:
+      - in: query
+        name: symbol
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 20
+            type: string
+          - type: 'null'
+          title: Symbol
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignalScorecard'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Signal Scorecard
+      tags:
+      - trade
+  /api/trade/webhook:
+    post:
+      description: 'Ingest an Alpaca trade-update and reconcile fills into the ledger instantly.
+
+
+        Shared-secret authenticated (constant-time compare). This is the fast path;
+
+        the background poll loop remains a backstop and is idempotent with it. An
+
+        unknown order id is accepted but writes nothing (never raises).'
+      operationId: alpaca_webhook_api_trade_webhook_post
+      parameters:
+      - in: header
+        name: x-webhook-secret
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Webhook-Secret
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlpacaTradeUpdate'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResult'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Alpaca Webhook
+      tags:
+      - trade
+  /health:
+    get:
+      description: 'Liveness. Unchanged shape: this is the long-standing public probe.'
+      operationId: health_health_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Health Health Get
+                type: object
+          description: Successful Response
+      summary: Health
+      tags:
+      - health
+  /health/live:
+    get:
+      description: Explicit alias for /health, for orchestrators that want the pair named.
+      operationId: liveness_health_live_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                title: Response Liveness Health Live Get
+                type: object
+          description: Successful Response
+      summary: Liveness
+      tags:
+      - health
+  /health/ready:
+    get:
+      description: 'Readiness. 503 when a required dependency is unreachable.
+
+
+        The full report is returned on both paths - an operator reading a failing
+
+        probe needs to know WHICH dependency went, and a 503 with an empty body
+
+        makes them go find out from somewhere else.'
+      operationId: readiness_health_ready_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessReport'
+          description: Successful Response
+      summary: Readiness
+      tags:
+      - health
+x-websockets:
+  /ws/insights/{symbol}:
+    auth: JWT access token via the ?token= query parameter.
+    frames:
+      alert: A user alert fired (price/RSI/model condition).
+      end: Stream complete; carries citations and the disclaimer.
+      error: Recoverable stream error; the socket stays open.
+      event: Market-wide event intelligence broadcast to every socket.
+      start: Stream opened for a symbol.
+      token: Incremental text chunk of the model's rationale.
+    summary: Streaming AI insight, live alerts and market-wide event frames.
