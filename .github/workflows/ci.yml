@@ -52,9 +52,13 @@ jobs:
       - name: Verify DB migrations apply
         run: alembic upgrade head
 
-      - name: Run tests with coverage gate (fail under 80%)
+      # --cov-branch is also set in .coveragerc; passed explicitly here so the
+      # gate is readable from the workflow. Branch coverage counts untaken
+      # if/else paths, which line coverage silently scores as covered.
+      - name: Run tests with branch-coverage gate (fail under 89%)
         run: |
-          pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+          pytest --cov=app --cov-branch --cov-report=term-missing \
+                 --cov-report=xml --cov-fail-under=89
 
       - name: Upload coverage artifact
         if: always()
@@ -62,6 +66,55 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  docs:
+    name: API Contract (OpenAPI drift)
+    runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: development
+      DATABASE_URL: sqlite:///./docs_check.db
+      JWT_SECRET: ci-only-secret-key-at-least-32-bytes-long-xyz
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Fails when a route or model changed without regenerating docs/openapi.*,
+      # so the published contract can never silently drift from the running app.
+      - name: Verify the committed OpenAPI spec is current
+        run: python scripts/export_openapi.py --check
+
+  frontend:
+    name: Frontend Unit Tests (WebSocket state machine)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax-check the shipped bundle
+        run: node --check web/app.js
+
+      # No npm install and no jsdom: the suite evaluates the real web/app.js in
+      # a node:vm context with stub DOM/WebSocket/timers, so what is tested is
+      # the exact artifact the browser loads. Virtual timers make the reconnect
+      # backoff assertable instead of slept through.
+      - name: Run the browser-harness unit tests
+        run: node --test "tests/js/*.test.mjs"
 
   security:
     name: Security Scan (SAST + dependency CVEs)
@@ -87,3 +140,67 @@ jobs:
 
       - name: pip-audit (fail the build on vulnerable dependencies)
         run: pip-audit --progress-spinner off
+
+  e2e:
+    name: Docker Build + E2E Integration Smoke
+    runs-on: ubuntu-latest
+    needs: [test]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The smoke suite is dependency-light on purpose (stdlib urllib); the only
+      # extra is a WebSocket client, so the realtime checks run instead of skip.
+      - name: Install the smoke-test client
+        run: python -m pip install --upgrade pip websockets
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the REAL production image (multi-stage, non-root) with a layer
+      # cache, then load it locally so compose runs the exact artifact we ship.
+      - name: Build the production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: ai-finance-intelligence:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Runs the image built above (--no-build), against real Postgres+pgvector
+      # and Redis, with 2 workers so cross-worker paths are actually exercised.
+      - name: Start the full stack (Postgres + pgvector, Redis, API)
+        env:
+          API_IMAGE: ai-finance-intelligence:ci
+          JWT_SECRET: ci-only-secret-key-at-least-32-bytes-long-xyz
+          WEB_CONCURRENCY: "2"
+          ALERTS_ENABLED: "false"
+        run: docker compose up -d --no-build --wait --wait-timeout 240
+
+      # Drives the live container over HTTP + WebSocket against real Postgres
+      # and Redis: auth flow, ledger round-trip, kill-switch, alerts, metrics.
+      - name: Run the E2E smoke suite against the live container
+        run: python scripts/e2e_smoke.py --base-url http://localhost:8000
+
+      - name: Assert multi-worker startup left no errors in the logs
+        run: |
+          if docker compose logs api 2>&1 | grep -iE "traceback|critical|fatal_config"; then
+            echo "Container logs contain errors"; exit 1
+          fi
+          echo "Container logs clean"
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

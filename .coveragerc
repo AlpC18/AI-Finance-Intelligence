@@ -1,5 +1,6 @@
 [run]
 source = app
+branch = True
 omit =
     app/__init__.py
     */__init__.py
@@ -10,3 +11,10 @@ exclude_lines =
     pragma: no cover
     if __name__ == .__main__.:
     raise NotImplementedError
+    if TYPE_CHECKING:
+    @(abc\.)?abstractmethod
+    ^\s*\.\.\.$
+    ^\s*async def .*\) -> .*: \.\.\.$
+    ^\s*def .*\) -> .*: \.\.\.$
+exclude_also =
+    ^\s*class .*\(Protocol\):

@@ -26,8 +26,9 @@ class RedisCache:
     async def get(self, key: str) -> Optional[Any]:
         try:
             raw = await self._client.get(key)
-            # nosec B301: values are written only by this app to a private Redis
-            # instance (trusted provider output), never untrusted external input.
+            # B301 is suppressed on the line below: values are written only by
+            # this app to a private Redis instance (trusted provider output),
+            # never untrusted external input.
             return pickle.loads(raw) if raw is not None else None  # nosec B301
         except (RedisError, pickle.PickleError, OSError) as exc:
             logger.warning("Redis get failed (%s); using fallback.", exc)
@@ -47,7 +48,7 @@ class RedisCache:
             raw = await self._client.get(key)
             if raw is not None:
                 record_cache_hit(_BACKEND)
-                # nosec B301: see get() — cache payloads are app-produced, not untrusted.
+                # B301 suppressed as in get(): cache payloads are app-produced.
                 return pickle.loads(raw)  # nosec B301
             record_cache_miss(_BACKEND)
             value = await factory()

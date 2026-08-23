@@ -124,15 +124,17 @@ class PgVectorStore:
         ]
         pool = await self._get_pool()
         async with pool.acquire() as conn:
+            # Table identifier is validated at construction; every value is bound.
             await conn.executemany(
-                f"INSERT INTO {self._table} "  # nosec B608 - identifier validated; values are bound
+                f"INSERT INTO {self._table} "  # nosec B608
                 "(dedup_key, text, headline, source, link, embedding) "
                 "VALUES ($1, $2, $3, $4, $5, $6::vector) "
                 "ON CONFLICT (dedup_key) DO NOTHING;",
                 rows,
             )
+            # Identifier validated as above; the capacity limit is a bound param.
             await conn.execute(
-                f"DELETE FROM {self._table} WHERE id NOT IN "  # nosec B608 - identifier validated; capacity is bound
+                f"DELETE FROM {self._table} WHERE id NOT IN "  # nosec B608
                 f"(SELECT id FROM {self._table} ORDER BY id DESC LIMIT $1);",
                 self._capacity,
             )
@@ -148,8 +150,9 @@ class PgVectorStore:
         literal = _vector_literal(vec[0])
         pool = await self._get_pool()
         async with pool.acquire() as conn:
+            # Identifier validated as above; the query vector is a bound param.
             records = await conn.fetch(
-                f"SELECT text, headline, source, link, "  # nosec B608 - identifier validated; vector is bound
+                f"SELECT text, headline, source, link, "  # nosec B608
                 "1 - (embedding <=> $1::vector) AS score "
                 f"FROM {self._table} ORDER BY embedding <=> $1::vector LIMIT $2;",
                 literal,
@@ -175,4 +178,5 @@ class PgVectorStore:
         await self._ensure_schema()
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            return int(await conn.fetchval(f"SELECT COUNT(*) FROM {self._table};"))  # nosec B608 - identifier validated
+            # Identifier validated at construction; no user input in this statement.
+            return int(await conn.fetchval(f"SELECT COUNT(*) FROM {self._table};"))  # nosec B608

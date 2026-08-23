@@ -1,0 +1,88 @@
+# Local production-shaped stack: Postgres+pgvector, Redis, and the API.
+#
+# This is deliberately the SAME topology as production, because several failure
+# modes only appear with more than one worker and shared state:
+#   - the scheduler takes a Redis leader lock so alerts fire once, not N times,
+#   - WebSocket fan-out crosses workers over Redis Pub/Sub,
+#   - RAG embeddings live in Postgres/pgvector instead of per-process memory.
+# Running SQLite + in-memory cache locally hides all three.
+#
+#   docker compose up --build     -> http://localhost:8000
+#   docker compose down -v        -> stop and drop volumes
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: afi
+      POSTGRES_PASSWORD: afi
+      POSTGRES_DB: afi
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afi -d afi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    # Tagged so CI can build the image once (with a layer cache) and have compose
+    # run that exact artifact via --no-build, rather than rebuilding it here.
+    image: ${API_IMAGE:-ai-finance-intelligence:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      # 'development' keeps the boot preflight from demanding production secrets;
+      # set ENVIRONMENT=production to exercise the full fail-closed check.
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      DATABASE_URL: postgresql://afi:afi@db:5432/afi
+      CACHE_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-local-only-development-secret-at-least-32-bytes}
+      # Optional: leave empty to run in degraded mode (quant readings, no AI text).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ALERTS_ENABLED: ${ALERTS_ENABLED:-true}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      TRADE_WEBHOOK_SECRET: ${TRADE_WEBHOOK_SECRET:-}
+    # Migrations run before the workers start, exactly as in the Render release step.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000
+             --workers ${WEB_CONCURRENCY:-2} --no-access-log"
+    # Probes READINESS, not liveness: `docker compose up --wait` should mean the
+    # API can actually reach Postgres, not merely that uvicorn bound a port. The
+    # old /health probe went green before the database was usable, so the E2E
+    # smoke could start against an instance that was not yet able to serve it.
+    # urlopen raises on the 503 a failed readiness returns, which is the signal.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).status==200 else 1)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  db-data:
