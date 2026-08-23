@@ -27,7 +27,12 @@ CACHE_EVENTS = Counter(
 ORDERS = Counter(
     "trade_orders_total",
     "Order submissions by outcome (a sustained reject rate means broken execution).",
-    labelnames=("outcome", "reason"),  # outcome: accepted | rejected
+    labelnames=("outcome", "reason"),  # accepted | rejected | canceled | replaced
+)
+
+RISK_HALTS = Counter(
+    "trade_risk_halts_total",
+    "Accounts automatically halted by the daily-loss limit and flattened.",
 )
 
 FILLS_RECONCILED = Counter(
@@ -70,6 +75,30 @@ def record_order_accepted() -> None:
 def record_order_rejected(reason: str) -> None:
     """``reason`` is a low-cardinality class (risk, notional, provider, ...)."""
     ORDERS.labels(outcome="rejected", reason=reason or "unknown").inc()
+
+
+def record_order_canceled(source: str) -> None:
+    """``source`` separates a routine single cancel from a kill-switch flatten.
+
+    The distinction is the whole point: a burst of ``kill_switch`` cancels is an
+    operator pulling the handle, which is a different page for whoever is on
+    call than a user tidying up one resting order.
+    """
+    ORDERS.labels(outcome="canceled", reason=source or "unknown").inc()
+
+
+def record_order_replaced() -> None:
+    """Amendments are counted apart from submissions: a rising replace rate is a
+    pricing problem, not a demand one, and averaging them together hides both."""
+    ORDERS.labels(outcome="replaced", reason="none").inc()
+
+
+def record_risk_halt_tripped() -> None:
+    """An account hit its daily-loss limit and was flattened automatically.
+
+    Operator-grade: a cluster of these is a market event, and a flat zero while
+    limits are configured means the sweep has stopped running."""
+    RISK_HALTS.inc()
 
 
 def record_fill_reconciled(source: str) -> None:
