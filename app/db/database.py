@@ -12,7 +12,15 @@ engine = create_engine(_settings.database_url, connect_args=_connect_args)
 
 def init_db() -> None:
     """Create tables. Import models so they register on SQLModel.metadata."""
-    from app.models import alert, broker, order, risk, transaction, user  # noqa: F401
+    from app.models import (  # noqa: F401
+        alert,
+        backtest,
+        broker,
+        order,
+        risk,
+        transaction,
+        user,
+    )
 
     SQLModel.metadata.create_all(engine)
 
