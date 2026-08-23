@@ -1,5 +1,8 @@
 """Portfolio service: holdings & P&L reconstructed from the transaction ledger."""
+from typing import Optional
+
 import numpy as np
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.core.errors import AppError
@@ -39,13 +42,33 @@ class PortfolioService:
         session.refresh(tx)
         return tx
 
-    def list_transactions(self, session: Session, user_id: int) -> list[Transaction]:
+    def list_transactions(
+        self,
+        session: Session,
+        user_id: int,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> list[Transaction]:
+        """Read the ledger. `limit=None` means the FULL ledger.
+
+        Holdings reconstruction replays every transaction, so the unbounded
+        form has to stay available; it is the HTTP surface that is capped, not
+        this method.
+        """
         stmt = (
             select(Transaction)
             .where(Transaction.user_id == user_id)
             .order_by(Transaction.timestamp)
         )
+        if limit is not None:
+            stmt = stmt.offset(offset).limit(limit)
         return list(session.exec(stmt).all())
+
+    def count_transactions(self, session: Session, user_id: int) -> int:
+        return session.exec(
+            select(func.count()).select_from(Transaction)
+            .where(Transaction.user_id == user_id)
+        ).one()
 
     # --- Reconstruction (single source of truth) ---
     def reconstruct_holdings(self, session: Session, user_id: int) -> list[Holding]:

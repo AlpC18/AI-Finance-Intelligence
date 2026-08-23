@@ -18,7 +18,9 @@ from app.services.portfolio_service import PortfolioService
 from app.services.quant_service import QuantService
 from app.services.backtest_service import BacktestService
 from app.services.key_rotation_service import KeyRotationService
+from app.services.performance_service import PerformanceService
 from app.services.reconciliation_service import TradeReconciliationService
+from app.services.signal_performance_service import SignalPerformanceService
 from app.services.risk_service import RiskService
 from app.services.trade_service import TradeService
 
@@ -179,6 +181,17 @@ def get_backtest_service() -> BacktestService:
 @lru_cache
 def get_trade_service() -> TradeService:
     return TradeService(get_settings(), get_market_service(), risk=get_risk_service())
+
+
+@lru_cache
+def get_signal_performance_service() -> SignalPerformanceService:
+    """Grades executed signals against the live feed the rest of the app uses."""
+    return SignalPerformanceService(get_market_service())
+
+
+@lru_cache
+def get_performance_service() -> PerformanceService:
+    return PerformanceService(get_portfolio_service())
 
 
 @lru_cache
