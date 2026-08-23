@@ -1,4 +1,7 @@
 """Async financial news: httpx fetch (I/O) + feedparser parse (pure), tenacity-backed."""
+from __future__ import annotations
+
+from typing import Optional
 from urllib.parse import quote_plus
 
 import feedparser
@@ -18,8 +21,13 @@ _GOOGLE = "https://news.google.com/rss/search?q={q}+stock&hl=en-US&gl=US&ceid=US
 
 
 class RssNewsProvider:
-    def __init__(self, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        timeout: float = 10.0,
+        transport: Optional[httpx.AsyncBaseTransport] = None,
+    ) -> None:
         self._timeout = timeout
+        self._transport = transport  # test seam (httpx.MockTransport)
 
     @retry(
         retry=retry_if_exception_type(httpx.HTTPError),
@@ -35,7 +43,9 @@ class RssNewsProvider:
     async def fetch(self, query: str, limit: int = 10) -> list[Article]:
         q = quote_plus(query)
         articles: list[Article] = []
-        async with httpx.AsyncClient(timeout=self._timeout, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(
+            timeout=self._timeout, headers=_HEADERS, transport=self._transport
+        ) as client:
             for url in (_YAHOO.format(q=q), _GOOGLE.format(q=q)):
                 try:
                     raw = await self._get(client, url)

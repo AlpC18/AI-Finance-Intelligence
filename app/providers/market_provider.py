@@ -1,4 +1,8 @@
 """Async market data via Yahoo chart JSON API (pure httpx, tenacity-backed)."""
+from __future__ import annotations
+
+from typing import Optional
+
 import httpx
 import pandas as pd
 from tenacity import (
@@ -19,8 +23,13 @@ _RANGE = {"1mo": "1mo", "6mo": "6mo", "1y": "1y", "5d": "5d"}
 
 
 class YahooMarketProvider:
-    def __init__(self, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        timeout: float = 10.0,
+        transport: Optional[httpx.AsyncBaseTransport] = None,
+    ) -> None:
         self._timeout = timeout
+        self._transport = transport  # test seam (httpx.MockTransport)
 
     @retry(
         retry=retry_if_exception_type(httpx.HTTPError),
@@ -30,7 +39,9 @@ class YahooMarketProvider:
     )
     async def _fetch_chart(self, symbol: str, period: str) -> dict:
         params = {"range": _RANGE.get(period, "6mo"), "interval": "1d"}
-        async with httpx.AsyncClient(timeout=self._timeout, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(
+            timeout=self._timeout, headers=_HEADERS, transport=self._transport
+        ) as client:
             resp = await client.get(_BASE.format(symbol=symbol), params=params)
             resp.raise_for_status()
             return resp.json()
@@ -57,7 +68,9 @@ class YahooMarketProvider:
     async def get_fundamentals(self, symbol: str) -> Fundamentals:
         """Best-effort fundamentals via Yahoo quoteSummary. Empty on any failure."""
         try:
-            async with httpx.AsyncClient(timeout=self._timeout, headers=_HEADERS) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, headers=_HEADERS, transport=self._transport
+            ) as client:
                 resp = await client.get(
                     _SUMMARY.format(symbol=symbol), params={"modules": _MODULES}
                 )

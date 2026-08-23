@@ -59,7 +59,16 @@ def test_logout_blocklists_access_token(client):
 
 
 def test_production_preflight_flags_placeholders():
-    prod = Settings(environment="production")  # placeholder secret, no AI key
+    # Every field is pinned explicitly: Settings reads the ambient environment,
+    # and CI exports a real JWT_SECRET and CACHE_BACKEND=redis. Left implicit,
+    # those leak in and the preflight finds nothing to flag, so the test passes
+    # locally and asserts nothing in CI.
+    prod = Settings(
+        environment="production",
+        jwt_secret="dev-insecure-change-me",
+        anthropic_api_key="",
+        cache_backend="memory",
+    )
     errors = prod.production_config_errors()
     assert any("JWT_SECRET" in e for e in errors)
     assert any("ANTHROPIC_API_KEY" in e for e in errors)
