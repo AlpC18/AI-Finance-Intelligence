@@ -147,6 +147,42 @@ async def get_ws_user(
     return session.get(User, user_id)
 
 
+@router.websocket("/ws/account")
+async def account_ws(
+    websocket: WebSocket,
+    user: User | None = Depends(get_ws_user),
+    manager: ConnectionManager = Depends(get_connection_manager),
+) -> None:
+    """A push-only channel for account events: fills, order transitions, halts.
+
+    Everything else surfaced only on poll, which is the wrong shape for events
+    the user needs to know about the moment they happen - a fill, or an account
+    being flattened by its loss limit.
+
+    The socket carries no request protocol. It registers with the
+    ConnectionManager and then blocks on receive purely to notice the client
+    going away: anything the client sends is ignored rather than interpreted,
+    so this channel can never become a second, unaudited command surface.
+    """
+    if user is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    await manager.connect(user.id, websocket)
+    try:
+        await websocket.send_json({"type": "ready", "channel": "account"})
+        while True:
+            await websocket.receive_text()  # ignored; this is a read-only channel
+    except WebSocketDisconnect:
+        record_ws_disconnect("client")
+    except Exception as exc:  # noqa: BLE001 - never leak a socket
+        record_ws_disconnect("error")
+        logger.warning("ws_account_error", error=str(exc))
+        with contextlib.suppress(Exception):
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+    finally:
+        await manager.disconnect(user.id, websocket)
+
+
 @router.websocket("/ws/insights/{symbol}")
 async def insights_ws(
     websocket: WebSocket,
@@ -179,6 +215,17 @@ async def insights_ws(
     except Exception as exc:  # noqa: BLE001 - never leak a socket on unexpected error
         record_ws_disconnect("error")   # a spike here is an operator-grade signal
         logger.warning("ws_stream_error", error=str(exc))
+        # Say so before going away. Logging alone left the client holding an
+        # open socket with no frame and no close, where a failed stream is
+        # indistinguishable from a slow one - so the UI waits instead of
+        # surfacing the error or reconnecting. Both sends are best-effort:
+        # the socket may already be gone, and that is not a second failure.
+        with contextlib.suppress(Exception):
+            await websocket.send_json(
+                {"type": "error", "symbol": symbol, "detail": "stream_failed"}
+            )
+        with contextlib.suppress(Exception):
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
     finally:
         await manager.disconnect(user.id, websocket)
 

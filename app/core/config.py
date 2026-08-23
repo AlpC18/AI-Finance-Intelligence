@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     position_sync_interval_minutes: int = 15
     event_scan_enabled: bool = True
     event_scan_interval_minutes: int = 10
+    # Evaluates the daily-loss limit on a timer instead of only when someone
+    # happens to make a request. Without it the automatic halt is not a
+    # protection, it is a report you get next time you look.
+    risk_sweep_enabled: bool = True
+    risk_sweep_interval_minutes: int = 5
 
     # Inbound broker webhook (Alpaca trade updates). Shared-secret authenticated;
     # empty -> the endpoint is disabled (503) and only the poll backstop runs.

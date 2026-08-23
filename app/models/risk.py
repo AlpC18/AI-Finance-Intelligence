@@ -17,6 +17,12 @@ class RiskSetting(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True, unique=True, nullable=False)
     daily_loss_limit_pct: float = 0.0  # 0 -> automatic (drawdown) halt disabled
     manual_halt: bool = Field(default=False)  # operator kill-switch toggle
+    # UTC date (ISO) on which the AUTOMATIC drawdown halt last fired.
+    # Drawdown is a daily measure that resets with the opening snapshot, so a
+    # date is exactly the right granularity: it makes the trip idempotent
+    # within a day (the sweep must not re-flatten every five minutes) while
+    # letting tomorrow trip on its own.
+    auto_halt_tripped_on: Optional[str] = Field(default=None)
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -40,6 +46,11 @@ class RiskConfigRead(BaseModel):
 
 class KillSwitchToggle(BaseModel):
     enabled: bool  # True -> manually halt automated trading
+    # A halt that only refuses NEW orders leaves resting ones filling into the
+    # very drawdown the switch was pulled to stop, so flattening is the default.
+    # Opt out when you want submissions frozen but existing working orders left
+    # alone. Ignored when enabled=False - resuming never touches orders.
+    cancel_open: bool = True
 
 
 class KillSwitchStatus(BaseModel):
@@ -50,6 +61,10 @@ class KillSwitchStatus(BaseModel):
     opening_equity: float
     current_equity: float
     drawdown_pct: float
+    # How many working orders this request flattened. None on a plain status
+    # read, which asked the venue for nothing - distinct from 0, which means we
+    # tried and there was nothing left to cancel.
+    canceled_orders: Optional[int] = None
 
 
 class DriftItem(BaseModel):

@@ -77,6 +77,85 @@ async def _push_alert(broadcaster, alert: Alert, triggered_at: datetime, contact
         logger.warning("Alert %s push failed: %s", alert.id, exc)
 
 
+async def run_risk_sweep() -> None:
+    """Evaluate every armed daily-loss limit and flatten the accounts that broke it.
+
+    This is what makes the automatic halt a protection rather than a report.
+    ``RiskService.status()`` computes drawdown only when something asks, and the
+    only things that asked were an execute attempt and a status read - so a user
+    who left a resting order and closed the tab could run straight through their
+    limit with the switch never once evaluating.
+
+    Defensive in the same shape as the other sweeps: one user's bad credentials
+    or unreachable venue must not stop the others from being checked. Every
+    account is evaluated inside its own try.
+    """
+    from app.core.deps import get_risk_service, get_trade_service, get_ws_broadcaster
+    from app.models.user import User
+
+    risk = get_risk_service()
+    trade = get_trade_service()
+    broadcaster = get_ws_broadcaster()
+    with Session(engine) as session:
+        try:
+            user_ids = risk.users_with_automatic_limits(session)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Risk sweep could not list accounts: %s", exc)
+            return
+        for user_id in user_ids:
+            try:
+                await _evaluate_one_account(session, user_id, risk, trade, broadcaster)
+            except Exception as exc:  # noqa: BLE001 - one account must not kill sweep
+                logger.warning("Risk sweep failed for user %s: %s", user_id, exc)
+
+
+async def _evaluate_one_account(session, user_id: int, risk, trade, broadcaster) -> None:
+    """Trip the automatic halt for one account, at most once per UTC day."""
+    from app.core.metrics import record_risk_halt_tripped
+
+    status = await risk.status(session, user_id)
+    if not status.halted or status.reason != "daily_loss_limit":
+        return
+    # The drawdown condition keeps evaluating true for the rest of the day, so
+    # without this the sweep would re-flatten every interval and re-notify a
+    # user who has already been told and already has nothing working.
+    if risk.already_tripped_today(session, user_id):
+        return
+
+    canceled = await trade.cancel_open_orders(session, user_id, source="auto_halt")
+    risk.mark_auto_halt_tripped(session, user_id)
+    record_risk_halt_tripped()
+    logger.warning(
+        "AUTO HALT: user=%s drawdown=%.2f%% limit=%.2f%% flattened=%s",
+        user_id, status.drawdown_pct, status.daily_loss_limit_pct, canceled,
+    )
+    await _push_halt(session, broadcaster, user_id, status, canceled)
+
+
+async def _push_halt(session, broadcaster, user_id: int, status, canceled: int) -> None:
+    """Tell the user their account was halted, escalating if they are offline.
+
+    Delivered through ``deliver_alert`` rather than a plain publish: an account
+    being flattened is precisely the event a user must not miss because they
+    happened to have no socket open.
+    """
+    from app.models.user import User
+    from app.models.ws import WsHaltFrame
+
+    frame = WsHaltFrame(
+        reason=status.reason,
+        drawdown_pct=status.drawdown_pct,
+        daily_loss_limit_pct=status.daily_loss_limit_pct,
+        canceled_orders=canceled,
+        halted_at=datetime.now(timezone.utc).isoformat(),
+    ).model_dump()
+    try:
+        contact = _contact_for(session.get(User, user_id))
+        await broadcaster.deliver_alert(user_id, frame, contact)
+    except Exception as exc:  # noqa: BLE001 - a push failure must not undo the halt
+        logger.warning("Halt push failed for user %s: %s", user_id, exc)
+
+
 async def run_order_reconciliation() -> None:
     """Poll open broker orders and reconcile fills into the ledger (non-blocking)."""
     from app.core.deps import get_reconciliation_service, get_trade_service
@@ -107,7 +186,9 @@ async def run_position_sync() -> None:
     recon = get_reconciliation_service()
     trade = get_trade_service()
     with Session(engine) as session:
-        user_ids = {uid for (uid,) in session.exec(select(TradeOrder.user_id)).all()}
+        # A single-column select yields scalars, not 1-tuples: unpacking them
+        # raised TypeError and killed this sweep before it checked anybody.
+        user_ids = set(session.exec(select(TradeOrder.user_id)).all())
         for user_id in user_ids:
             provider = trade.provider_for_user(session, user_id)
             if provider is None:
@@ -144,15 +225,31 @@ async def run_event_scan() -> None:
             logger.warning("Event push failed: %s", exc)
 
 
+def _lock_ttl(interval_seconds: int) -> int:
+    """Lock lifetime for a job that runs every `interval_seconds`.
+
+    The TTL must expire STRICTLY BEFORE the next run is due. A lock that
+    outlives its interval is worse than no lock: when a leader crashes
+    mid-sweep, every run scheduled inside the remaining TTL finds the lock
+    still held and skips silently, so the job just stops happening.
+
+    Scaling to 90% of the interval keeps that margin at every interval length;
+    the older `interval - 10` inverted for short poll intervals (a 5s poll got
+    a 10s lock). One second is the floor, since Redis rejects a zero TTL.
+    """
+    return max(1, min(interval_seconds - 1, int(interval_seconds * 0.9)))
+
+
 def build_scheduler(settings: Settings) -> AsyncIOScheduler:
     """Wire interval jobs, each guarded by a Redis leader lock so exactly one
     worker runs a sweep. Lock TTLs auto-expire below the interval so a crashed
     leader never deadlocks the job.
     """
     scheduler = AsyncIOScheduler(timezone="UTC")
-    alerts_ttl = max(30, settings.alert_interval_minutes * 60 - 10)
-    recon_ttl = max(10, settings.order_poll_interval_seconds - 5)
-    possync_ttl = max(60, settings.position_sync_interval_minutes * 60 - 10)
+    alerts_ttl = _lock_ttl(settings.alert_interval_minutes * 60)
+    recon_ttl = _lock_ttl(settings.order_poll_interval_seconds)
+    possync_ttl = _lock_ttl(settings.position_sync_interval_minutes * 60)
+    risk_ttl = _lock_ttl(settings.risk_sweep_interval_minutes * 60)
 
     scheduler.add_job(
         with_leader_lock("alert-checks", alerts_ttl)(run_alert_checks),
@@ -183,9 +280,21 @@ def build_scheduler(settings: Settings) -> AsyncIOScheduler:
             coalesce=True,
             replace_existing=True,
         )
+    if settings.risk_sweep_enabled:
+        scheduler.add_job(
+            with_leader_lock("risk-sweep", risk_ttl)(run_risk_sweep),
+            trigger="interval",
+            minutes=settings.risk_sweep_interval_minutes,
+            id="risk-sweep",
+            max_instances=1,
+            coalesce=True,
+            replace_existing=True,
+        )
     if settings.event_scan_enabled:
         scheduler.add_job(
-            with_leader_lock("event-scan", max(60, settings.event_scan_interval_minutes * 60 - 10))(run_event_scan),
+            with_leader_lock(
+                "event-scan", _lock_ttl(settings.event_scan_interval_minutes * 60)
+            )(run_event_scan),
             trigger="interval",
             minutes=settings.event_scan_interval_minutes,
             id="event-scan",

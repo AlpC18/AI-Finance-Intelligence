@@ -76,6 +76,38 @@ class RiskService:
             session.refresh(snap)
         return snap
 
+    # --- automatic (drawdown) halt ---
+    def users_with_automatic_limits(self, session: Session) -> list[int]:
+        """Users whose daily-loss limit is actually armed.
+
+        A limit of 0 means the automatic halt is off, and sweeping accounts that
+        cannot trip is the difference between a cheap periodic check and one
+        that walks every user on the platform.
+        """
+        rows = session.exec(
+            select(RiskSetting.user_id).where(RiskSetting.daily_loss_limit_pct > 0)
+        ).all()
+        return list(rows)
+
+    def already_tripped_today(self, session: Session, user_id: int) -> bool:
+        setting = self._find(session, user_id)
+        return bool(setting and setting.auto_halt_tripped_on == _today())
+
+    def mark_auto_halt_tripped(self, session: Session, user_id: int) -> None:
+        """Record that the automatic halt fired today, so the sweep acts ONCE.
+
+        Deliberately not written as ``manual_halt``: that field carries operator
+        intent, and a resume would then be indistinguishable from clearing an
+        automatic trip. The drawdown condition re-evaluates itself from equity
+        every sweep and needs no latch to stay halted - this only stops the
+        FLATTEN from repeating every interval.
+        """
+        setting = self._find(session, user_id) or RiskSetting(user_id=user_id)
+        setting.auto_halt_tripped_on = _today()
+        setting.updated_at = datetime.now(timezone.utc)
+        session.add(setting)
+        session.commit()
+
     # --- kill-switch ---
     def set_manual_halt(self, session: Session, user_id: int, enabled: bool) -> None:
         """Operator kill-switch toggle — force-halt or resume automated trading."""
@@ -120,3 +152,7 @@ class RiskService:
                 status_code=423,
                 reason="risk_halt",
             )
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
