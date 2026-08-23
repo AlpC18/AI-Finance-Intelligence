@@ -55,6 +55,7 @@
           <button class="btn btn-solid" id="mkt-read">Read</button>
           <button class="btn btn-signal" id="mkt-signal-btn">Ask the model</button>
         </div>
+        <div id="mkt-halt"></div>
         <div id="mkt-readout" class="readout-empty">Enter a symbol to take a reading.</div>
         <div id="mkt-signal" class="signal-slot"></div>
       </section>
@@ -63,7 +64,8 @@
       <section class="panel" id="desk-panel" aria-labelledby="desk-label">
         <div class="panel-head"><span class="eyebrow" id="desk-label">Trade desk</span>
           <span class="head-note">execution, risk &amp; live model stream</span></div>
-        <div class="readout-strip" id="deck-stats"></div>
+        <div id="deck-halt"></div>
+        <div class="metric-grid" id="deck-stats"></div>
         <div class="kill-row">
           <label class="switch" title="Halt or resume automated trading">
             <input type="checkbox" id="kill-toggle" />
@@ -75,7 +77,14 @@
           <input id="desk-symbol" class="mono" placeholder="Symbol to stream — e.g. AAPL" />
           <button class="btn btn-signal" id="desk-stream-btn" type="submit">Stream insight</button>
         </form>
-        <pre id="desk-stream" class="signal-slot mono" aria-live="polite"></pre>
+        <div class="stream-head">
+          <span id="ws-conn" class="conn is-idle" role="status" aria-live="polite">
+            <span class="conn-dot"></span><span id="ws-conn-text">Idle</span>
+          </span>
+          <span id="stream-meta" class="stream-meta"></span>
+        </div>
+        <pre id="desk-stream" class="signal-slot mono is-idle" aria-live="polite"
+             >Pick a symbol and stream to watch the model reason in real time.</pre>
         <div id="desk-cite" class="cite-row"></div>
       </section>
 
@@ -92,7 +101,8 @@
           <input id="tx-price" class="mono" type="number" step="any" min="0" placeholder="Price" required />
           <button class="btn btn-solid" type="submit">Record trade</button>
         </form>
-        <div class="readout-strip" id="pf-summary"></div>
+        <div class="metric-grid" id="pf-summary"></div>
+        <div id="pf-curve" class="curve-slot"></div>
         <div id="pf-holdings" class="table-slot"></div>
         <div class="panel-foot">
           <button class="btn btn-signal" id="advice-btn">Ask for advice</button>

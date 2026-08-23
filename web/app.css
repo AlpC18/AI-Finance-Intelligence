@@ -168,3 +168,120 @@ td:first-child{text-align:left;font-weight:600;letter-spacing:.03em}
   .topbar{padding:14px 16px}.brand-kicker{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ============================================================
+   TIER 3 — explicit loading / empty / error / connection states
+   Every async surface now resolves to one of four visible states
+   instead of silently leaving stale content on screen.
+   ============================================================ */
+
+/* --- state blocks: shared shell for empty / error / loading --- */
+.state{display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+  padding:18px 16px;border:1px dashed var(--line);border-radius:var(--r);
+  background:var(--panel-2);color:var(--muted);font-size:13px}
+.state-title{color:var(--ivory);font-weight:600;font-size:13px}
+.state-hint{color:var(--muted-2);font-size:12px}
+.state.is-error{border-style:solid;border-color:rgba(232,121,90,.35);
+  background:rgba(232,121,90,.06)}
+.state.is-error .state-title{color:var(--loss)}
+.state-retry{margin-top:8px;background:transparent;border:1px solid var(--line);
+  border-radius:7px;padding:6px 12px;color:var(--ivory);font-size:12px;
+  font-weight:600;cursor:pointer;transition:border-color .15s}
+.state-retry:hover{border-color:rgba(232,179,65,.5)}
+
+/* --- skeleton shimmer for loading --- */
+.skel{display:block;height:11px;border-radius:6px;margin:7px 0;
+  background:linear-gradient(90deg,rgba(236,231,218,.06) 25%,
+    rgba(236,231,218,.13) 37%,rgba(236,231,218,.06) 63%);
+  background-size:400% 100%;animation:shimmer 1.4s ease infinite}
+.skel.w-40{width:40%}.skel.w-60{width:60%}.skel.w-80{width:80%}
+@keyframes shimmer{0%{background-position:100% 50%}100%{background-position:0 50%}}
+
+/* --- inline busy indicator on buttons --- */
+.btn[aria-busy="true"]{opacity:.65;pointer-events:none;position:relative}
+.btn[aria-busy="true"]::after{content:"";width:11px;height:11px;margin-left:8px;
+  display:inline-block;vertical-align:-1px;border:2px solid currentColor;
+  border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* --- websocket connection status --- */
+.conn{display:inline-flex;align-items:center;gap:7px;font:500 11px/1 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:var(--muted-2);flex:none}
+.conn.is-live .conn-dot{background:var(--gain);box-shadow:0 0 0 3px rgba(87,199,163,.16)}
+.conn.is-live{color:var(--gain);border-color:rgba(87,199,163,.3)}
+.conn.is-connecting .conn-dot,
+.conn.is-retrying .conn-dot{background:var(--signal);animation:pulse 1.1s ease-in-out infinite}
+.conn.is-connecting,.conn.is-retrying{color:var(--signal);border-color:rgba(232,179,65,.3)}
+.conn.is-down .conn-dot{background:var(--loss)}
+.conn.is-down{color:var(--loss);border-color:rgba(232,121,90,.35)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.conn-act{background:transparent;border:0;color:inherit;font:inherit;
+  text-decoration:underline;cursor:pointer;padding:0;opacity:.85}
+.conn-act:hover{opacity:1}
+
+/* --- circuit-breaker / kill-switch halt banner --- */
+.halt-banner{display:flex;align-items:flex-start;gap:11px;margin:12px 0;
+  padding:13px 15px;border-radius:var(--r);
+  border:1px solid rgba(232,121,90,.4);background:rgba(232,121,90,.09)}
+.halt-banner .halt-icon{color:var(--loss);font-size:15px;line-height:1.2;flex:none}
+.halt-title{color:var(--loss);font-weight:700;font-size:13px;
+  letter-spacing:.08em;text-transform:uppercase}
+.halt-detail{color:var(--ivory);font-size:13px;margin-top:3px}
+.halt-banner.is-event{border-color:rgba(232,179,65,.4);background:rgba(232,179,65,.09)}
+.halt-banner.is-event .halt-icon,.halt-banner.is-event .halt-title{color:var(--signal)}
+
+/* --- streaming panel --- */
+.stream-head{display:flex;align-items:center;justify-content:space-between;
+  gap:10px;margin:12px 0 7px;flex-wrap:wrap}
+.stream-meta{font:500 11px/1 var(--mono);color:var(--muted-2);letter-spacing:.06em}
+#desk-stream{min-height:104px;max-height:280px;overflow-y:auto;white-space:pre-wrap;
+  word-break:break-word;scroll-behavior:smooth}
+#desk-stream.is-idle{color:var(--muted-2)}
+.stream-caret::after{content:"▌";color:var(--signal);animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* --- portfolio metric strip --- */
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  gap:9px;margin:11px 0}
+.metric{background:var(--panel-2);border:1px solid var(--line-2);
+  border-radius:var(--r);padding:11px 13px}
+.metric-label{display:block;font:600 10px/1 var(--ui);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.metric-value{font:500 17px/1.15 var(--mono);color:var(--ivory)}
+.metric-value.pos{color:var(--gain)}
+.metric-value.neg{color:var(--loss)}
+.metric-sub{display:block;font-size:11px;color:var(--muted-2);margin-top:4px}
+
+/* --- stale-data marker --- */
+.stale{opacity:.5;transition:opacity .2s}
+
+@media (prefers-reduced-motion:reduce){
+  .skel,.conn-dot,.stream-caret::after,.btn[aria-busy="true"]::after{animation:none}
+}
+
+/* ---------- EQUITY CURVE ---------- */
+/* Hand-drawn inline SVG: the page ships self-contained, so no chart library. */
+.curve-slot { margin: 14px 0 4px; }
+.curve-head {
+  display: flex; align-items: baseline; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 6px;
+}
+.curve-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .65; }
+.curve-return { font-variant-numeric: tabular-nums; font-weight: 600; }
+.curve-sub { font-size: 11px; opacity: .55; margin-left: auto; }
+.curve-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.curve-line { fill: none; stroke: var(--accent, #6ea8fe); stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round; }
+/* A dashed span is an interval we never observed — never draw it as if we had. */
+.curve-line.is-gap { stroke-dasharray: 3 3; opacity: .45; }
+.curve-line.is-up { stroke: var(--pos, #3fb950); }
+.curve-line.is-down { stroke: var(--neg, #f85149); }
+.curve-dot { fill: var(--accent, #6ea8fe); }
+.curve-dot.is-up { fill: var(--pos, #3fb950); }
+.curve-dot.is-down { fill: var(--neg, #f85149); }
+.curve-note { font-size: 11px; opacity: .55; margin-top: 4px; }
+.curve-empty {
+  font-size: 12px; opacity: .5; padding: 14px 0; text-align: center;
+}
