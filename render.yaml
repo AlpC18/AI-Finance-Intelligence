@@ -19,7 +19,9 @@ services:
     runtime: docker
     plan: starter
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
+    # Readiness, so a deploy is only promoted once the instance can reach
+    # its database - /health answers 200 from a process that cannot serve.
+    healthCheckPath: /health/ready
     autoDeploy: true
     # Apply DB migrations before each release; boot is gated by the app preflight.
     preDeployCommand: alembic upgrade head
