@@ -27,6 +27,7 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
+from app.core.money import to_decimal
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.models.broker import (
@@ -338,8 +339,11 @@ async def test_ledger_records_the_executed_price_not_the_reference(fill_price, l
         s.commit()
         assert wrote is True
         tx = _txs(s)[0]
-        assert tx.price == fill_price, label
-        assert tx.quantity == 10.0
+        # Compared as exact money. `tx.price == 0.01` would FAIL here, and
+        # that failure is the point of the migration: the ledger holds exactly
+        # 0.01 while the float literal is 0.010000000000000000208166817117...
+        assert tx.price == to_decimal(fill_price), label
+        assert tx.quantity == to_decimal(10)
 
 
 async def test_slippage_beyond_the_notional_cap_is_still_booked_honestly():

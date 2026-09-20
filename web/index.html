@@ -3,147 +3,193 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI Finance Intelligence — Instrument Deck</title>
+  <title>AI Finance Intelligence — Research Terminal</title>
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <meta name="theme-color" content="#0a0e1a" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/app.css" />
 </head>
-<body>
-  <!-- AUTH -->
-  <section id="auth" class="auth" hidden>
-    <div class="auth-card">
-      <div class="wordmark"><span class="wm-tick">▌</span>AFI</div>
-      <h1 class="auth-title">The instrument deck</h1>
-      <p class="auth-sub">Sign in to read markets, run your ledger, and arm alerts.</p>
-      <div class="tabs" role="tablist">
-        <button class="tab is-on" data-mode="login" role="tab">Sign in</button>
-        <button class="tab" data-mode="register" role="tab">Create account</button>
+<body data-theme="terminal">
+  <section id="auth" class="auth-shell" hidden aria-labelledby="auth-title">
+    <div class="auth-intro">
+      <div class="brand-lockup"><span class="brand-mark">AF</span><span>AI Finance Intelligence</span></div>
+      <div>
+        <p class="section-kicker">Research terminal</p>
+        <h1 id="auth-title">Read the instrument<br />before you trade it.</h1>
+        <p class="lede">Live readings, research workflows and a paper-only execution desk in one auditable workspace.</p>
       </div>
-      <form id="auth-form" class="stack" autocomplete="on">
-        <label class="field"><span>Email</span>
-          <input id="auth-email" type="email" required placeholder="you@desk.com" /></label>
-        <label class="field"><span>Password</span>
-          <input id="auth-pass" type="password" required minlength="8" placeholder="8+ characters" /></label>
-        <button class="btn btn-signal" type="submit" id="auth-submit">Sign in</button>
+      <div class="auth-statline" aria-label="Platform capabilities">
+        <span><b>Paper</b> safe by default</span><span><b>Live</b> account events</span><span><b>AI</b> cited research</span>
+      </div>
+    </div>
+    <div class="auth-form-pane">
+      <div>
+        <p class="section-kicker">Operator access</p>
+        <h2>Enter the terminal</h2>
+        <p class="quiet">Sign in to use your own paper account. Sessions are protected and rate limited.</p>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Account access">
+        <button class="tab is-on" data-mode="login" role="tab" aria-selected="true">Sign in</button>
+        <button class="tab" data-mode="register" role="tab" aria-selected="false">Create account</button>
+      </div>
+      <form id="auth-form" class="form-stack" autocomplete="on">
+        <label class="field"><span>Operator ID</span><input id="auth-email" type="email" required placeholder="operator@desk.com" autocomplete="email" /></label>
+        <label class="field"><span>Passphrase</span><input id="auth-pass" type="password" required minlength="8" placeholder="8+ characters" autocomplete="current-password" /></label>
+        <button class="btn btn-primary" type="submit" id="auth-submit">Enter terminal</button>
         <p class="form-note" id="auth-note" aria-live="polite"></p>
       </form>
+      <p class="fine">Not investment advice. Orders remain in paper trading mode unless a separately controlled live environment is enabled.</p>
     </div>
-    <p class="fine">Not investment advice. Data is delayed and for research only.</p>
   </section>
 
-  <!-- DECK -->
-  <div id="deck" class="deck" hidden>
-    <header class="topbar">
-      <div class="brand">
-        <span class="wm-tick">▌</span>
-        <span class="brand-name">AI Finance Intelligence</span>
-        <span class="brand-kicker">instrument deck</span>
+  <div id="deck" class="app-shell" hidden>
+    <header class="masthead">
+      <div class="identity">
+        <span class="brand-mark" aria-hidden="true">AF</span>
+        <span><strong>AI Finance Intelligence</strong><small>paper · session</small></span>
       </div>
-      <div class="session">
-        <span id="who" class="who mono"></span>
-        <button class="btn btn-ghost" id="logout">Log out</button>
+      <dl class="session-metrics" aria-label="Portfolio session metrics">
+        <div><dt>Equity</dt><dd id="top-equity">—</dd><small id="top-equity-note">paper account</small></div>
+        <div><dt>Daily P&amp;L vs loss limit</dt><dd id="top-daily-pnl">—</dd><small id="top-loss-limit">limit —</small></div>
+        <div><dt>Max drawdown</dt><dd id="top-drawdown">—</dd><small>current session</small></div>
+      </dl>
+      <div class="mast-actions">
+        <div class="theme-switch" role="group" aria-label="Color theme">
+          <button type="button" data-theme-choice="terminal" aria-pressed="true">Terminal</button>
+          <button type="button" data-theme-choice="modernist" aria-pressed="false">Modernist</button>
+          <button type="button" data-theme-choice="industry" aria-pressed="false">Industry</button>
+        </div>
+        <div class="broker-status"><span class="live-dot"></span><span id="top-broker">Paper broker</span></div>
+        <label class="kill-card" for="kill-toggle"><span>Kill switch</span><b id="kill-state">—</b><input id="kill-toggle" type="checkbox" /></label>
+        <div class="operator-menu"><span id="who" class="mono"></span><button class="btn btn-link" id="logout">Log out</button></div>
       </div>
     </header>
 
-    <main class="grid">
-      <!-- HERO: MARKET READOUT -->
-      <section class="panel hero" id="market" aria-labelledby="mkt-label">
-        <div class="panel-head"><span class="eyebrow" id="mkt-label">Market instrument</span></div>
-        <div class="mkt-controls">
-          <input id="mkt-symbol" class="input-lg mono" placeholder="Symbol — e.g. AAPL, BTC-USD, MSFT" />
-          <button class="btn btn-solid" id="mkt-read">Read</button>
-          <button class="btn btn-signal" id="mkt-signal-btn">Ask the model</button>
-        </div>
-        <div id="mkt-halt"></div>
-        <div id="mkt-readout" class="readout-empty">Enter a symbol to take a reading.</div>
-        <div id="mkt-signal" class="signal-slot"></div>
-      </section>
+    <nav class="workspace-dock" aria-label="Workspace navigation">
+      <button class="dock-item is-current" data-scroll-target="overview"><b>Alt 1</b><span>Deck</span><small>risk overview</small></button>
+      <button class="dock-item" data-scroll-target="instrument"><b>Alt 2</b><span>Instrument</span><small>read · verdict · stage</small></button>
+      <button class="dock-item" data-scroll-target="execution"><b>Alt 3</b><span>Execution</span><small>stage · commit · blotter</small></button>
+      <button class="dock-item" data-scroll-target="portfolio"><b>Alt 4</b><span>Portfolio</span><small>hold · measure · rebalance</small></button>
+      <button class="dock-item" data-scroll-target="research"><b>Alt 5</b><span>Research</span><small>options · filings · strategies</small></button>
+      <button class="dock-item" data-scroll-target="wire"><b>Alt 6</b><span>Wire</span><small>news · alerts · activity</small></button>
+    </nav>
 
-      <!-- TRADE DESK: execution, risk kill-switch, live model stream -->
-      <section class="panel" id="desk-panel" aria-labelledby="desk-label">
-        <div class="panel-head"><span class="eyebrow" id="desk-label">Trade desk</span>
-          <span class="head-note">execution, risk &amp; live model stream</span></div>
+    <main class="workspace">
+      <section id="overview" class="screen" aria-labelledby="overview-title">
+        <div class="screen-heading">
+          <div><p class="section-kicker">Deck</p><h1 id="overview-title">Risk overview</h1></div>
+          <p class="screen-meta">Paper session · <span id="session-state">Account data refreshes as events arrive</span></p>
+        </div>
         <div id="deck-halt"></div>
-        <div class="metric-grid" id="deck-stats"></div>
-        <div class="kill-row">
-          <label class="switch" title="Halt or resume automated trading">
-            <input type="checkbox" id="kill-toggle" />
-            <span>Kill-switch</span>
-          </label>
-          <span id="kill-state" class="tag">—</span>
+        <div id="deck-stats" class="metric-rail" aria-live="polite"></div>
+        <div class="dashboard-grid deck-grid">
+          <section class="panel panel-tall" aria-labelledby="activity-label">
+            <div class="panel-head"><span class="eyebrow" id="activity-label">Activity timeline</span><span id="account-conn" class="conn is-idle"><span class="conn-dot"></span><span>Connecting…</span></span></div>
+            <div id="activity-list" class="activity-list"></div>
+          </section>
+          <section class="panel risk-brief" aria-labelledby="risk-brief-label">
+            <div class="panel-head"><span class="eyebrow" id="risk-brief-label">Operating rules</span><span class="tag">paper only</span></div>
+            <p>Every order passes the configured risk controls and is preserved in the account activity timeline.</p>
+            <dl class="brief-list"><div><dt>Execution</dt><dd>Simulation default</dd></div><div><dt>Event state</dt><dd>WebSocket monitored</dd></div><div><dt>Research state</dt><dd>Citations surfaced</dd></div></dl>
+          </section>
         </div>
-        <form id="desk-stream-form" class="inline-row">
-          <input id="desk-symbol" class="mono" placeholder="Symbol to stream — e.g. AAPL" />
-          <button class="btn btn-signal" id="desk-stream-btn" type="submit">Stream insight</button>
-        </form>
-        <div class="stream-head">
-          <span id="ws-conn" class="conn is-idle" role="status" aria-live="polite">
-            <span class="conn-dot"></span><span id="ws-conn-text">Idle</span>
-          </span>
-          <span id="stream-meta" class="stream-meta"></span>
-        </div>
-        <pre id="desk-stream" class="signal-slot mono is-idle" aria-live="polite"
-             >Pick a symbol and stream to watch the model reason in real time.</pre>
-        <div id="desk-cite" class="cite-row"></div>
       </section>
 
-      <!-- LEDGER + RISK -->
-      <section class="panel" id="ledger" aria-labelledby="lg-label">
-        <div class="panel-head"><span class="eyebrow" id="lg-label">Ledger</span>
-          <span class="head-note">holdings &amp; P&amp;L, reconstructed from every trade</span></div>
-        <form id="tx-form" class="tx-row">
-          <input id="tx-symbol" class="mono" placeholder="Symbol" required />
-          <select id="tx-action" class="mono" aria-label="Side">
-            <option value="BUY">Buy</option><option value="SELL">Sell</option>
-          </select>
-          <input id="tx-qty" class="mono" type="number" step="any" min="0" placeholder="Qty" required />
-          <input id="tx-price" class="mono" type="number" step="any" min="0" placeholder="Price" required />
-          <button class="btn btn-solid" type="submit">Record trade</button>
-        </form>
-        <div class="metric-grid" id="pf-summary"></div>
-        <div id="pf-curve" class="curve-slot"></div>
-        <div id="pf-holdings" class="table-slot"></div>
-        <div class="panel-foot">
-          <button class="btn btn-signal" id="advice-btn">Ask for advice</button>
+      <section id="instrument" class="screen" aria-labelledby="instrument-title">
+        <div class="screen-heading"><div><p class="section-kicker">Instrument</p><h1 id="instrument-title">Read, verify, stage</h1></div><p class="screen-meta">Quote, technical context and model reasoning are deliberately separate.</p></div>
+        <section class="panel stage-panel" id="market" aria-labelledby="mkt-label">
+          <div class="panel-head stage-head">
+            <span class="eyebrow" id="mkt-label">Market reading</span>
+            <div class="deck-nav-pills" role="tablist" aria-label="Instrument workspace">
+              <button class="pill is-on" data-view="chart-view" role="tab">Chart</button>
+              <button class="pill" data-view="options-view" role="tab">Options</button>
+              <button class="pill" data-view="rag-view" role="tab">Filings</button>
+              <button class="pill" data-view="marketplace-view" role="tab">Strategies</button>
+            </div>
+          </div>
+          <div class="mkt-controls">
+            <label class="symbol-input"><span>Instrument</span><input id="mkt-symbol" class="mono" placeholder="AAPL, NVDA, BTC-USD" value="AAPL" /></label>
+            <button class="btn btn-primary" id="mkt-read">Read market</button>
+            <button class="btn btn-quiet" id="mkt-signal-btn">Single AI read</button>
+            <button class="btn btn-quiet" id="mkt-multi-agent-btn">Multi-agent review</button>
+          </div>
+          <div id="mkt-halt"></div>
+          <div id="chart-container" class="chart-box">
+            <div class="chart-toolbar"><span id="chart-symbol-badge" class="mono chart-badge">AAPL · 1D</span><span>Drag-free paper planning levels</span><div class="chart-legend"><span class="leg-price">Last</span><span class="leg-limit">Limit</span><span class="leg-tp">TP</span><span class="leg-sl">SL</span></div></div>
+            <canvas id="interactive-chart" width="1100" height="320" aria-label="Price chart with paper order levels"></canvas>
+            <div class="chart-levels">
+              <label>Limit <input type="number" step="0.5" id="chart-limit-val" class="mono" /></label>
+              <label>Take profit <input type="number" step="0.5" id="chart-tp-val" class="mono" /></label>
+              <label>Stop loss <input type="number" step="0.5" id="chart-sl-val" class="mono" /></label>
+              <button class="btn btn-outline" id="apply-chart-to-order">Stage in order ticket</button>
+            </div>
+          </div>
+          <div id="mkt-readout" class="readout-empty">Enter an instrument to begin a market reading.</div>
+          <div id="mkt-signal" class="signal-slot"></div>
+          <div id="multi-agent-consensus-slot" class="signal-slot"></div>
+        </section>
+
+        <section class="panel advanced-panel" id="options-panel" aria-labelledby="options-label" hidden>
+          <div class="panel-head"><span class="eyebrow" id="options-label">Options &amp; Greeks</span><span class="head-note">Analytic pricing and paper payoff simulation</span></div>
+          <div class="inline-row"><select id="opt-template-select" class="mono"><option value="covered_call">Covered call</option><option value="iron_condor">Iron condor</option><option value="protective_put">Protective put</option><option value="straddle">Long straddle</option></select><button class="btn btn-primary" id="calc-opt-payoff">Calculate payoff</button></div>
+          <div id="options-greeks-grid" class="metric-rail"></div><div id="options-payoff-slot" class="signal-slot"></div><div id="options-chain-table" class="table-slot"></div>
+        </section>
+
+        <section class="panel advanced-panel" id="rag-panel" aria-labelledby="rag-label" hidden>
+          <div class="panel-head"><span class="eyebrow" id="rag-label">Filings intelligence</span><span class="head-note">SEC filings, transcripts and tone divergence</span></div>
+          <form id="rag-ingest-form" class="form-stack">
+            <div class="inline-row"><input id="rag-sym" class="mono compact" placeholder="Symbol" required /><select id="rag-doc-type" class="mono"><option value="earnings_call_transcript">Earnings call transcript</option><option value="sec_10k">SEC 10-K annual filing</option><option value="sec_10q">SEC 10-Q quarterly filing</option><option value="xbrl_footnote">XBRL footnote</option></select><input id="rag-doc-title" placeholder="Document title" required /></div>
+            <textarea id="rag-doc-text" class="mono" rows="4" placeholder="Paste a filing or transcript excerpt for indexing..."></textarea>
+            <div class="inline-row"><button class="btn btn-primary" type="submit">Ingest document</button><button class="btn btn-quiet" type="button" id="rag-check-shift">Analyze tone divergence</button></div>
+          </form>
+          <div id="rag-shift-report" class="signal-slot"></div><div id="rag-search-results" class="wire-list"></div>
+        </section>
+
+        <section class="panel advanced-panel" id="marketplace-panel" aria-labelledby="mp-label" hidden>
+          <div class="panel-head"><span class="eyebrow" id="mp-label">Strategy marketplace</span><span class="head-note">Verified track records · paper mirroring only</span></div>
+          <div id="mp-leaderboard-list" class="table-slot"></div><div id="mp-subscriptions-slot"></div>
+        </section>
+      </section>
+
+      <section id="execution" class="screen" aria-labelledby="execution-title">
+        <div class="screen-heading"><div><p class="section-kicker">Execution</p><h1 id="execution-title">Stage and monitor</h1></div><p class="screen-meta">All default order activity is simulated.</p></div>
+        <div class="dashboard-grid execution-grid">
+          <section class="panel" id="desk-panel" aria-labelledby="desk-label">
+            <div class="panel-head"><span class="eyebrow" id="desk-label">Live model stream</span><span id="ws-conn" class="conn is-idle" role="status"><span class="conn-dot"></span><span id="ws-conn-text">Idle</span></span></div>
+            <form id="desk-stream-form" class="inline-row"><input id="desk-symbol" class="mono" placeholder="Instrument to stream" /><button class="btn btn-primary" id="desk-stream-btn" type="submit">Open stream</button></form>
+            <div class="stream-head"><span id="stream-meta" class="mono"></span><span>Connection state is explicit</span></div>
+            <pre id="desk-stream" class="stream-surface mono is-idle" aria-live="polite">Select an instrument to watch the model stream its research.</pre>
+            <div id="desk-cite" class="cite-row"></div>
+          </section>
+          <section class="panel" id="ledger" aria-labelledby="lg-label">
+            <div class="panel-head"><span class="eyebrow" id="lg-label">Paper order ticket</span><span class="tag">simulation</span></div>
+            <form id="tx-form" class="tx-row"><input id="tx-symbol" class="mono" placeholder="Symbol" required /><select id="tx-action" class="mono" aria-label="Side"><option value="BUY">Buy</option><option value="SELL">Sell</option></select><input id="tx-qty" class="mono" type="number" step="any" min="0" placeholder="Quantity" required /><input id="tx-price" class="mono" type="number" step="any" min="0" placeholder="Limit price" required /><button class="btn btn-primary" type="submit">Record paper trade</button></form>
+            <p class="quiet ticket-note">Recording a transaction updates the ledger and risk view; it does not transmit a live order.</p>
+          </section>
         </div>
-        <div id="pf-advice" class="signal-slot"></div>
       </section>
 
-      <!-- WIRE (news) -->
-      <section class="panel" id="wire" aria-labelledby="wire-label">
-        <div class="panel-head"><span class="eyebrow" id="wire-label">Wire</span></div>
-        <form id="news-form" class="inline-row">
-          <input id="news-query" class="mono" placeholder="Company or ticker" required />
-          <button class="btn btn-solid" type="submit">Scan</button>
-          <button class="btn btn-signal" id="news-ai" type="button">Model read</button>
-        </form>
-        <div id="news-insight" class="signal-slot"></div>
-        <div id="news-list" class="wire-list"></div>
+      <section id="portfolio" class="screen" aria-labelledby="portfolio-title">
+        <div class="screen-heading"><div><p class="section-kicker">Portfolio</p><h1 id="portfolio-title">Holdings &amp; risk</h1></div><button class="btn btn-quiet" id="advice-btn">Ask portfolio AI</button></div>
+        <section class="panel portfolio-panel"><div id="pf-summary" class="metric-rail"></div><div id="pf-curve" class="curve-slot"></div><div id="pf-holdings" class="table-slot"></div><div id="pf-advice" class="signal-slot"></div></section>
       </section>
 
-      <!-- WATCH (alerts) -->
-      <section class="panel" id="watch" aria-labelledby="watch-label">
-        <div class="panel-head"><span class="eyebrow" id="watch-label">Watch</span>
-          <span class="head-note">the deck checks these while you're away</span></div>
-        <form id="alert-form" class="tx-row">
-          <input id="al-symbol" class="mono" placeholder="Symbol" required />
-          <select id="al-cond" class="mono" aria-label="Condition">
-            <option value="PRICE_ABOVE">Price above</option>
-            <option value="PRICE_BELOW">Price below</option>
-            <option value="RSI_BELOW">RSI below</option>
-            <option value="AI_SIGNAL_STRONG_BUY">Model: strong buy</option>
-          </select>
-          <input id="al-threshold" class="mono" type="number" step="any" placeholder="Threshold" />
-          <button class="btn btn-solid" type="submit">Arm alert</button>
-        </form>
-        <div id="alerts-list" class="watch-list"></div>
+      <section id="research" class="screen" aria-labelledby="research-title">
+        <div class="screen-heading"><div><p class="section-kicker">Research</p><h1 id="research-title">Evidence before conviction</h1></div><p class="screen-meta">Open Options, Filings or Strategies from the Instrument workspace.</p></div>
+        <div class="research-callouts"><button class="callout" data-open-view="options-view"><b>01</b><span><strong>Options &amp; Greeks</strong><small>Price and inspect payoff risk.</small></span></button><button class="callout" data-open-view="rag-view"><b>02</b><span><strong>Filings intelligence</strong><small>Index evidence and check tone shifts.</small></span></button><button class="callout" data-open-view="marketplace-view"><b>03</b><span><strong>Strategy marketplace</strong><small>Review and mirror in paper mode.</small></span></button></div>
+      </section>
+
+      <section id="wire" class="screen" aria-labelledby="wire-title">
+        <div class="screen-heading"><div><p class="section-kicker">Wire</p><h1 id="wire-title">News, watches, events</h1></div><p class="screen-meta">A live event triggers a deliberate refresh, never a hidden state change.</p></div>
+        <div class="dashboard-grid wire-grid">
+          <section class="panel" aria-labelledby="wire-label"><div class="panel-head"><span class="eyebrow" id="wire-label">News &amp; model read</span></div><form id="news-form" class="inline-row"><input id="news-query" class="mono" placeholder="Company or ticker" required /><button class="btn btn-primary" type="submit">Scan wire</button><button class="btn btn-quiet" id="news-ai" type="button">Model read</button></form><div id="news-insight" class="signal-slot"></div><div id="news-list" class="wire-list"></div></section>
+          <section class="panel" id="watch" aria-labelledby="watch-label"><div class="panel-head"><span class="eyebrow" id="watch-label">Watchlist &amp; alerts</span><span class="head-note">User-defined conditions</span></div><form id="alert-form" class="tx-row"><input id="al-symbol" class="mono" placeholder="Symbol" required /><select id="al-cond" class="mono" aria-label="Condition"><option value="PRICE_ABOVE">Price above</option><option value="PRICE_BELOW">Price below</option><option value="RSI_BELOW">RSI below</option><option value="AI_SIGNAL_STRONG_BUY">Model: strong buy</option></select><input id="al-threshold" class="mono" type="number" step="any" placeholder="Threshold" /><button class="btn btn-primary" type="submit">Arm alert</button></form><div id="alerts-list" class="watch-list"></div></section>
+        </div>
       </section>
     </main>
-
-    <footer class="deck-foot">
-      <span class="fine">Not investment advice — research signals only.</span>
-    </footer>
+    <footer class="app-footer"><span>AI Finance Intelligence</span><span>Research signals only · data may be delayed · not investment advice</span></footer>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

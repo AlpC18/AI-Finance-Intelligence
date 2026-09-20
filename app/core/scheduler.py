@@ -225,6 +225,19 @@ async def run_event_scan() -> None:
             logger.warning("Event push failed: %s", exc)
 
 
+async def run_paper_automations() -> None:
+    """Evaluate opt-in rules; the AutomationService can only call paper fills."""
+    from app.core.deps import get_automation_service
+
+    with Session(engine) as session:
+        try:
+            result = await get_automation_service().run(session)
+            if result.executed:
+                logger.info("Paper automation executed %s rule(s).", result.executed)
+        except Exception as exc:  # noqa: BLE001 - never let automation stop scheduler
+            logger.warning("Paper automation sweep failed: %s", exc)
+
+
 def _lock_ttl(interval_seconds: int) -> int:
     """Lock lifetime for a job that runs every `interval_seconds`.
 
@@ -240,6 +253,24 @@ def _lock_ttl(interval_seconds: int) -> int:
     return max(1, min(interval_seconds - 1, int(interval_seconds * 0.9)))
 
 
+def _scheduled_job(settings: Settings, name: str, ttl: int, handler):
+    """Return a leader-locked local handler or a leader-locked queue producer.
+
+    The lock stays at the scheduling seam: N API workers can never enqueue N
+    identical jobs. The worker executes only the trusted names accepted by its
+    internal registry in ``task_queue``.
+    """
+    if not settings.worker_queue_enabled:
+        return with_leader_lock(name, ttl)(handler)
+
+    async def enqueue() -> None:
+        from app.core.deps import get_task_queue
+
+        await get_task_queue().enqueue(name.replace("-", "_"))
+
+    return with_leader_lock(name, ttl)(enqueue)
+
+
 def build_scheduler(settings: Settings) -> AsyncIOScheduler:
     """Wire interval jobs, each guarded by a Redis leader lock so exactly one
     worker runs a sweep. Lock TTLs auto-expire below the interval so a crashed
@@ -252,7 +283,7 @@ def build_scheduler(settings: Settings) -> AsyncIOScheduler:
     risk_ttl = _lock_ttl(settings.risk_sweep_interval_minutes * 60)
 
     scheduler.add_job(
-        with_leader_lock("alert-checks", alerts_ttl)(run_alert_checks),
+        _scheduled_job(settings, "alert-checks", alerts_ttl, run_alert_checks),
         trigger="interval",
         minutes=settings.alert_interval_minutes,
         id="alert-checks",
@@ -262,7 +293,7 @@ def build_scheduler(settings: Settings) -> AsyncIOScheduler:
     )
     if settings.order_reconciliation_enabled:
         scheduler.add_job(
-            with_leader_lock("order-reconciliation", recon_ttl)(run_order_reconciliation),
+            _scheduled_job(settings, "order-reconciliation", recon_ttl, run_order_reconciliation),
             trigger="interval",
             seconds=settings.order_poll_interval_seconds,
             id="order-reconciliation",
@@ -272,7 +303,7 @@ def build_scheduler(settings: Settings) -> AsyncIOScheduler:
         )
     if settings.position_sync_enabled:
         scheduler.add_job(
-            with_leader_lock("position-sync", possync_ttl)(run_position_sync),
+            _scheduled_job(settings, "position-sync", possync_ttl, run_position_sync),
             trigger="interval",
             minutes=settings.position_sync_interval_minutes,
             id="position-sync",
@@ -282,7 +313,7 @@ def build_scheduler(settings: Settings) -> AsyncIOScheduler:
         )
     if settings.risk_sweep_enabled:
         scheduler.add_job(
-            with_leader_lock("risk-sweep", risk_ttl)(run_risk_sweep),
+            _scheduled_job(settings, "risk-sweep", risk_ttl, run_risk_sweep),
             trigger="interval",
             minutes=settings.risk_sweep_interval_minutes,
             id="risk-sweep",
@@ -292,14 +323,18 @@ def build_scheduler(settings: Settings) -> AsyncIOScheduler:
         )
     if settings.event_scan_enabled:
         scheduler.add_job(
-            with_leader_lock(
-                "event-scan", _lock_ttl(settings.event_scan_interval_minutes * 60)
-            )(run_event_scan),
+            _scheduled_job(settings, "event-scan", _lock_ttl(settings.event_scan_interval_minutes * 60), run_event_scan),
             trigger="interval",
             minutes=settings.event_scan_interval_minutes,
             id="event-scan",
             max_instances=1,
             coalesce=True,
             replace_existing=True,
+        )
+    if settings.paper_automation_enabled:
+        scheduler.add_job(
+            _scheduled_job(settings, "paper-automations", _lock_ttl(settings.paper_automation_interval_minutes * 60), run_paper_automations),
+            trigger="interval", minutes=settings.paper_automation_interval_minutes,
+            id="paper-automations", max_instances=1, coalesce=True, replace_existing=True,
         )
     return scheduler

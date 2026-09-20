@@ -19,6 +19,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
+from app.core.money import HUNDRED, ZERO, to_decimal
 from app.models.order import TradeAuditLog, TradeOrder
 from app.models.signal import ConfidenceBucket, SignalOutcome, SignalScorecard
 
@@ -98,8 +99,16 @@ class SignalPerformanceService:
 
 
 def _score(entry: TradeAuditLog, order: TradeOrder, price: float) -> SignalOutcome:
+    """Mark one filled signal against the latest quote.
+
+    ``price`` arrives as a float64 from the market provider and is converted
+    once, here, so the P&L below is exact money rather than money-shaped
+    float. ``return_pct`` stays a float on the way out: it is a statistic
+    about the trade, not a sum of money, and the model types it accordingly.
+    """
     fill = order.filled_avg_price
-    raw_pct = (price - fill) / fill * 100.0
+    mark = to_decimal(price)
+    raw_pct = (mark - fill) / fill * HUNDRED
     # Negate for the short side so "return" always means "return to the signal".
     signed = raw_pct if order.side == "buy" else -raw_pct
     notional = fill * order.filled_quantity
@@ -112,8 +121,8 @@ def _score(entry: TradeAuditLog, order: TradeOrder, price: float) -> SignalOutco
         fill_price=fill,
         quantity=order.filled_quantity,
         reference_price=price,
-        return_pct=round(signed, 4),
-        pnl=round(notional * signed / 100.0, 2),
+        return_pct=float(round(signed, 4)),
+        pnl=round(notional * signed / HUNDRED, 2),
         correct=signed > 0,
     )
 
@@ -128,7 +137,7 @@ def _aggregate(
             skipped_unpriced=unpriced,
             hit_rate_pct=0.0,
             avg_return_pct=0.0,
-            total_pnl=0.0,
+            total_pnl=ZERO,
             degraded=degraded,
             calibration_note=(
                 "Henuz puanlanabilir sinyal yok."
@@ -144,7 +153,7 @@ def _aggregate(
         skipped_unpriced=unpriced,
         hit_rate_pct=round(hits / len(outcomes) * 100.0, 2),
         avg_return_pct=round(sum(o.return_pct for o in outcomes) / len(outcomes), 4),
-        total_pnl=round(sum(o.pnl for o in outcomes), 2),
+        total_pnl=round(sum((o.pnl for o in outcomes), ZERO), 2),
         buckets=_bucketize(outcomes),
         best=max(outcomes, key=lambda o: o.return_pct),
         worst=min(outcomes, key=lambda o: o.return_pct),
@@ -173,7 +182,7 @@ def _bucketize(outcomes: list[SignalOutcome]) -> list[ConfidenceBucket]:
                 signals=len(group),
                 hit_rate_pct=round(hits / len(group) * 100.0, 2),
                 avg_return_pct=round(sum(o.return_pct for o in group) / len(group), 4),
-                total_pnl=round(sum(o.pnl for o in group), 2),
+                total_pnl=round(sum((o.pnl for o in group), ZERO), 2),
             )
         )
     return buckets

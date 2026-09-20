@@ -8,6 +8,7 @@ only ever read through the Fernet-encrypted BrokerCredential record.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import logging
 from typing import Callable, Optional
@@ -20,6 +21,7 @@ from sqlmodel import Session, select
 from app.core.config import Settings
 from app.core.crypto import decrypt, encrypt
 from app.core.errors import AppError, NotFoundError
+from app.core.money import ZERO, opt_decimal, to_decimal
 from app.core.metrics import (
     record_order_accepted,
     record_order_canceled,
@@ -45,9 +47,12 @@ from app.models.order import (
     is_cancelable,
 )
 from app.providers.alpaca_broker_provider import AlpacaBrokerProvider
+from app.providers.binance_broker_provider import BinanceBrokerProvider
 from app.providers.broker_base import BrokerError, BrokerProvider
+from app.providers.ibkr_broker_provider import IbkrBrokerProvider
 from app.services.market_service import MarketService
 from app.services.risk_service import RiskService
+from app.services.activity_service import ActivityService
 
 logger = logging.getLogger("trade")
 
@@ -62,11 +67,13 @@ class TradeService:
         market: MarketService,
         broker_factory: Optional[BrokerFactory] = None,
         risk: Optional[RiskService] = None,
+        activity: Optional[ActivityService] = None,
     ) -> None:
         self._settings = settings
         self._market = market
         self._broker_factory = broker_factory or AlpacaBrokerProvider
         self._risk = risk
+        self._activity = activity
 
     # --- Credentials (encrypted at rest) ---
     def save_credentials(
@@ -81,6 +88,9 @@ class TradeService:
         session.add(record)
         session.commit()
         session.refresh(record)
+        self._record_activity(session, user_id, "configuration", "Broker kimlik bilgileri güncellendi", {
+            "broker": data.broker, "paper": data.paper,
+        })
         return _credential_read(record, data.api_key)
 
     def get_credential_read(
@@ -106,7 +116,20 @@ class TradeService:
         record = self._find_credential(session, user_id, broker)
         if record is None:
             return None
-        return self._broker_factory(
+        if not record.paper and not self._settings.live_trading_enabled:
+            raise AppError(
+                "Live broker credentials require TRADING_MODE=live.",
+                status_code=403,
+                reason="live_mode_disabled",
+            )
+        factory = self._broker_factory
+        if factory is AlpacaBrokerProvider:
+            factory = {
+                "alpaca": AlpacaBrokerProvider,
+                "binance": BinanceBrokerProvider,
+                "ibkr": IbkrBrokerProvider,
+            }.get(record.broker, AlpacaBrokerProvider)
+        return factory(
             api_key=decrypt(record.api_key_enc),
             api_secret=decrypt(record.api_secret_enc),
             base_url=self._settings.alpaca_base_url,
@@ -232,7 +255,7 @@ class TradeService:
                 reason="not_cancelable",
             )
 
-        provider = self._provider_or_error(session, user_id, "alpaca")
+        provider = self._provider_or_error(session, user_id, order.broker)
         try:
             await provider.cancel_order(order.broker_order_id)
         except BrokerError as exc:
@@ -365,7 +388,7 @@ class TradeService:
         # venue rejects a genuinely unaffordable replace authoritatively.
         self._validate_notional(price * quantity)
 
-        provider = self._provider_or_error(session, user_id, "alpaca")
+        provider = self._provider_or_error(session, user_id, order.broker)
         client_order_id = _fresh_key()
         replacement = await provider.replace_order(
             order.broker_order_id,
@@ -407,9 +430,11 @@ class TradeService:
             raise NotFoundError("Emir bulunamadi.")
         return order
 
-    async def _market_price(self, symbol: str) -> float:
+    async def _market_price(self, symbol: str) -> Decimal:
+        """Latest quote as exact money - the float boundary, same as
+        ``_reference_price``."""
         data = await self._market.get_market_data(symbol)
-        return data.quote.price
+        return to_decimal(data.quote.price)
 
     # --- Execution ---
     async def execute(
@@ -430,8 +455,16 @@ class TradeService:
                 record_order_rejected(_reject_reason(exc))
                 sp.set_attribute("order.rejected", True)
                 sp.record_exception(exc)
+                self._record_activity(session, user_id, "risk", "Emir reddedildi", {
+                    "symbol": req.symbol.upper().strip(), "reason": exc.reason,
+                }, severity=3)
                 raise
             record_order_accepted()
+            if result.order is not None and not result.duplicate:
+                self._record_activity(session, user_id, "order", "Emir kabul edildi", {
+                    "symbol": result.order.symbol, "broker_order_id": result.order.id,
+                    "broker": req.broker, "side": result.order.side,
+                })
             return result
 
     async def _execute_inner(
@@ -457,10 +490,17 @@ class TradeService:
         side = _resolve_side(req)              # validates action (HOLD rejected)
         self._validate_confidence(req)         # AI-signal confidence gate
         price = await self._reference_price(req)
+        self._validate_bracket(side, price, req)
+        if self._risk is not None:
+            await self._risk.assert_order_allowed(
+                session, user_id, symbol=req.symbol, side=side,
+                quantity=req.quantity, price=price,
+                has_protective_stop=req.stop_loss is not None,
+            )
         notional = price * req.quantity
         self._validate_notional(notional)      # max order size
 
-        provider = self._provider_or_error(session, user_id, "alpaca")
+        provider = self._provider_or_error(session, user_id, req.broker)
         account = await provider.get_account()
         self._validate_buying_power(side, notional, account)  # live buying power
 
@@ -474,6 +514,8 @@ class TradeService:
                 quantity=req.quantity,
                 order_type=req.order_type,
                 limit_price=req.limit_price,
+                stop_loss=req.stop_loss,
+                take_profit=req.take_profit,
                 time_in_force=req.time_in_force,
                 client_order_id=client_order_id,
             )
@@ -514,7 +556,7 @@ class TradeService:
         session.add(
             TradeOrder(
                 user_id=user_id,
-                broker="alpaca",
+                broker=req.broker,
                 client_order_id=client_order_id,
                 broker_order_id=broker_order.id,
                 symbol=broker_order.symbol,
@@ -524,6 +566,8 @@ class TradeService:
                 status=broker_order.status or "pending",
                 filled_quantity=broker_order.filled_quantity,
                 filled_avg_price=broker_order.filled_avg_price,
+                stop_loss=req.stop_loss,
+                take_profit=req.take_profit,
                 reconciled=False,
             )
         )
@@ -544,6 +588,20 @@ class TradeService:
             return False
         return True
 
+    def _record_activity(
+        self, session: Session, user_id: int, kind: str, summary: str, payload: dict,
+        severity: int = 1,
+    ) -> None:
+        """Activity is observability: it can never overturn a trade outcome."""
+        if self._activity is None:
+            return
+        try:
+            self._activity.record(session, user_id, kind, summary, severity=severity, payload=payload)
+            session.commit()
+        except Exception:  # noqa: BLE001
+            session.rollback()
+            logger.warning("Could not append activity event", exc_info=True)
+
     # --- Risk validation (defensive, fail-closed) ---
     def _validate_confidence(self, req: TradeRequest) -> None:
         if (
@@ -557,12 +615,12 @@ class TradeService:
                 reason="confidence",
             )
 
-    def _validate_notional(self, notional: float) -> None:
+    def _validate_notional(self, notional: Decimal) -> None:
         if notional <= 0:
             raise AppError(
                 "Gecersiz islem buyuklugu.", status_code=422, reason="notional"
             )
-        if notional > self._settings.max_order_notional:
+        if notional > to_decimal(self._settings.max_order_notional):
             raise AppError(
                 f"Emir buyuklugu ({notional:.2f}) izin verilen azami "
                 f"({self._settings.max_order_notional:.2f}) ustunde.",
@@ -570,7 +628,7 @@ class TradeService:
                 reason="notional",
             )
 
-    def _validate_buying_power(self, side: str, notional: float, account) -> None:
+    def _validate_buying_power(self, side: str, notional: Decimal, account) -> None:
         if side == "buy" and account.buying_power and notional > account.buying_power:
             raise AppError(
                 f"Yetersiz alim gucu: {account.buying_power:.2f} < {notional:.2f}.",
@@ -578,11 +636,33 @@ class TradeService:
                 reason="buying_power",
             )
 
-    async def _reference_price(self, req: TradeRequest) -> float:
+    def _validate_bracket(self, side: str, reference_price: Decimal, req: TradeRequest) -> None:
+        """Reject inverted protective exits before they reach the broker.
+
+        A bracket must reduce risk in the direction of the position: accepting
+        a buy stop above its entry (or its inverse for a sell) silently turns a
+        claimed stop-loss into additional exposure.
+        """
+        if req.stop_loss is None:
+            return
+        if side == "buy" and not (req.stop_loss < reference_price < req.take_profit):
+            raise AppError("BUY icin stop < giris < hedef olmali.", status_code=422, reason="bracket")
+        if side == "sell" and not (req.take_profit < reference_price < req.stop_loss):
+            raise AppError("SELL icin hedef < giris < stop olmali.", status_code=422, reason="bracket")
+
+    async def _reference_price(self, req: TradeRequest) -> Decimal:
+        """The price the order is sized against, as an exact Decimal.
+
+        This is the float boundary: a limit price arrives already exact from
+        the client, but a live quote comes out of the market provider as a
+        float64. Converting here means every notional, buying-power check and
+        ledger row downstream is computed exactly, and the only rounding is the
+        one the quote already carried.
+        """
         if req.limit_price is not None:
             return req.limit_price
         data = await self._market.get_market_data(req.symbol)
-        return data.quote.price
+        return to_decimal(data.quote.price)
 
 
 def _utcnow() -> datetime:

@@ -94,6 +94,10 @@ class WsBroadcaster:
             logger.warning("WS publish failed (%s); local delivery only.", exc)
             await self._manager.send_to_user(user_id, frame)
 
+    async def publish_activity(self, user_id: int, frame: dict) -> None:
+        """Publish a non-critical account timeline update without escalation."""
+        await self.publish_alert(user_id, frame)
+
     async def publish_event(self, frame: dict) -> None:
         """Fan a market-wide event frame out to ALL sockets on every worker."""
         if self._redis is None:  # local-only mode

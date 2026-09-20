@@ -1,5 +1,32 @@
 "use strict";
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/static/sw.js").catch(() => {}));
+}
 const $ = (s, r = document) => r.querySelector(s);
+const THEME_KEY = "afi_ui_theme";
+const THEMES = new Set(["terminal", "modernist", "industry"]);
+
+function setTheme(theme) {
+  const active = THEMES.has(theme) ? theme : "terminal";
+  document.body.dataset.theme = active;
+  localStorage.setItem(THEME_KEY, active);
+  document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.themeChoice === active));
+  });
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.content = active === "terminal" ? "#0a0e1a" : "#f2f2f3";
+  // The chart is canvas-rendered, so redraw after the CSS palette switches.
+  // The lightweight JS test harness intentionally has no animation scheduler.
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => drawChart());
+  }
+}
+
+document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+  button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
+});
+setTheme(localStorage.getItem(THEME_KEY) || "terminal");
+
 const store = {
   get t() { return localStorage.getItem("afi_token"); },
   get r() { return localStorage.getItem("afi_refresh"); },
@@ -105,12 +132,14 @@ function showAuth() { wsTeardown(); $("#deck").hidden = true; $("#auth").hidden 
 function showDeck() {
   $("#auth").hidden = true; $("#deck").hidden = false;
   $("#who").textContent = store.email || "";
-  loadHoldings(); loadAlerts(); loadDeck(); loadContracts();
+  loadHoldings(); loadAlerts(); loadDeck(); loadContracts(); loadActivity(); connectAccountSocket();
 }
 document.querySelectorAll(".tab").forEach(t =>
   t.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(x => x.classList.remove("is-on"));
     t.classList.add("is-on");
+    document.querySelectorAll(".tab").forEach(x =>
+      x.setAttribute("aria-selected", String(x === t)));
     authMode = t.dataset.mode;
     $("#auth-submit").textContent = authMode === "login" ? "Sign in" : "Create account";
     $("#auth-note").textContent = "";
@@ -240,12 +269,34 @@ function metric(label, value, signVal, sub) {
     <span class="metric-value ${cls}">${esc(value)}</span>
     ${sub ? `<span class="metric-sub">${esc(sub)}</span>` : ""}</div>`;
 }
+function renderDeckHeader(deck) {
+  const ks = deck.kill_switch || {};
+  const equity = $("#top-equity");
+  const daily = $("#top-daily-pnl");
+  const limit = $("#top-loss-limit");
+  const drawdown = $("#top-drawdown");
+  const broker = $("#top-broker");
+  const session = $("#session-state");
+  if (equity) equity.textContent = money(ks.current_equity);
+  if (daily) {
+    daily.textContent = ks.drawdown_pct == null ? "—" : signed(ks.drawdown_pct) + "%";
+    daily.className = ks.drawdown_pct >= 0 ? "pos" : "neg";
+  }
+  if (limit) limit.textContent = "loss limit " + fmt(ks.daily_loss_limit_pct) + "%";
+  if (drawdown) {
+    drawdown.textContent = ks.drawdown_pct == null ? "—" : fmt(ks.drawdown_pct) + "%";
+    drawdown.className = ks.drawdown_pct < 0 ? "neg" : "";
+  }
+  if (broker) broker.textContent = deck.has_credentials ? "Broker linked · paper" : "Paper broker";
+  if (session) session.textContent = "Last desk refresh " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 async function loadDeck() {
   const stats = $("#deck-stats");
   renderLoading(stats, "Reading the desk…", 2);
   try {
     const d = await api("/api/trade/deck");
     const ks = d.kill_switch || {};
+    renderDeckHeader(d);
     stats.innerHTML =
       metric("Equity", money(ks.current_equity)) +
       metric("Daily P&L", signed(ks.drawdown_pct) + "%", ks.drawdown_pct,
@@ -284,6 +335,7 @@ $("#kill-toggle").addEventListener("change", async (e) => {
    reconnects on its own with capped exponential backoff, because a silently
    dead socket looks identical to a quiet market. */
 const WS_MAX_RETRIES = 6;
+const accountWs = { sock: null, timer: null, retries: 0, closed: false };
 const ws = {
   sock: null,
   symbol: null,
@@ -329,6 +381,54 @@ function wsTeardown() {
   if (ws.sock) { try { ws.sock.close(); } catch {} }
   ws.sock = null;
   ws.retries = 0;
+  accountWs.closed = true;
+  clearTimeout(accountWs.timer);
+  if (accountWs.sock) { try { accountWs.sock.close(); } catch {} }
+  accountWs.sock = null;
+}
+
+function accountWsUrl() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws/account?token=${encodeURIComponent(store.t || "")}`;
+}
+function setAccountConn(state, text) {
+  const el = $("#account-conn");
+  if (!el) return;
+  el.className = `conn is-${state}`;
+  el.lastElementChild.textContent = text;
+}
+function connectAccountSocket() {
+  accountWs.closed = false;
+  if (accountWs.sock) return;
+  try { accountWs.sock = new WebSocket(accountWsUrl()); }
+  catch { scheduleAccountReconnect(); return; }
+  accountWs.sock.onopen = () => { accountWs.retries = 0; setAccountConn("live", "Live"); };
+  accountWs.sock.onmessage = (event) => {
+    let frame; try { frame = JSON.parse(event.data); } catch { return; }
+    if (frame.type === "activity") loadActivity();
+    if (frame.type === "alert") { toast(`ALERT · ${frame.symbol} ${frame.condition}`); loadAlerts(); loadActivity(); }
+    if (frame.type === "order" || frame.type === "halt") { loadDeck(); loadHoldings(); loadActivity(); }
+  };
+  accountWs.sock.onclose = () => { accountWs.sock = null; if (!accountWs.closed) scheduleAccountReconnect(); };
+}
+function scheduleAccountReconnect() {
+  if (accountWs.closed || accountWs.timer) return;
+  accountWs.retries += 1;
+  const delay = Math.min(1000 * 2 ** Math.min(accountWs.retries, 4), 15000);
+  setAccountConn("retrying", "Reconnecting…");
+  accountWs.timer = setTimeout(() => { accountWs.timer = null; connectAccountSocket(); }, delay);
+}
+
+async function loadActivity() {
+  const target = $("#activity-list");
+  if (!target) return;
+  try {
+    const page = await api("/api/activity?limit=12");
+    if (!page.items.length) { renderEmpty(target, "No account activity", "Events will appear here as the desk changes."); return; }
+    target.innerHTML = page.items.map(item => `<div class="activity-row">
+      <span class="activity-kind">${esc(item.kind)}</span><div><strong>${esc(item.summary)}</strong>
+      <small>${esc(new Date(item.created_at).toLocaleString())}</small></div></div>`).join("");
+  } catch (err) { if (!isAuthError(err)) renderError(target, err.message, loadActivity); }
 }
 
 function streamInsight(symbol) {
@@ -711,6 +811,396 @@ async function loadAlerts() {
     renderError(list, e.message, loadAlerts);
   }
 }
+
+/* ---------- ADVANCED MODULES: TABS, CHART, MULTI-AGENT, OPTIONS, RAG, MARKETPLACE ---------- */
+
+// 1. Navigation Tab Switching
+document.querySelectorAll(".deck-nav-pills .pill").forEach(pill => {
+  pill.addEventListener("click", () => {
+    document.querySelectorAll(".deck-nav-pills .pill").forEach(p => p.classList.remove("is-on"));
+    pill.classList.add("is-on");
+    const view = pill.dataset.view;
+    $("#chart-container").hidden = view !== "chart-view";
+    $("#options-panel").hidden = view !== "options-view";
+    $("#rag-panel").hidden = view !== "rag-view";
+    $("#marketplace-panel").hidden = view !== "marketplace-view";
+    if (view === "options-view") loadOptionsChain();
+    if (view === "marketplace-view") loadMarketplace();
+  });
+});
+
+// 2. Interactive Candlestick & Level Chart
+let chartState = {
+  price: 150.0,
+  limit: 148.0,
+  tp: 165.0,
+  sl: 142.0,
+  symbol: "AAPL",
+};
+
+function initInteractiveChart(symbol = "AAPL", currentPrice = 150.0) {
+  chartState.symbol = symbol;
+  chartState.price = currentPrice;
+  chartState.limit = Number((currentPrice * 0.98).toFixed(2));
+  chartState.tp = Number((currentPrice * 1.08).toFixed(2));
+  chartState.sl = Number((currentPrice * 0.94).toFixed(2));
+
+  $("#chart-symbol-badge").textContent = `${symbol} · 1D`;
+  $("#chart-limit-val").value = chartState.limit;
+  $("#chart-tp-val").value = chartState.tp;
+  $("#chart-sl-val").value = chartState.sl;
+
+  drawChart();
+}
+
+function drawChart() {
+  const canvas = $("#interactive-chart");
+  // Some environments (including server-side test DOMs) expose the element
+  // but not the Canvas 2D API. The surrounding trading surface stays usable.
+  if (!canvas || typeof canvas.getContext !== "function") return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0d1320";
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw grid
+  ctx.strokeStyle = "rgba(236,231,218,0.05)";
+  ctx.lineWidth = 1;
+  for (let y = 30; y < h; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  // Generate 25 price bars around current price
+  const bars = 24;
+  const barW = Math.floor((w - 100) / bars);
+  let p = chartState.price * 0.92;
+  const minP = chartState.price * 0.85;
+  const maxP = chartState.price * 1.15;
+  const priceToY = (val) => h - 30 - ((val - minP) / (maxP - minP)) * (h - 60);
+
+  for (let i = 0; i < bars; i++) {
+    const delta = (Math.sin(i * 0.8) * 2 + (Math.random() - 0.48) * 3);
+    const open = p;
+    const close = i === bars - 1 ? chartState.price : open + delta;
+    const high = Math.max(open, close) + Math.random() * 2;
+    const low = Math.min(open, close) - Math.random() * 2;
+    p = close;
+
+    const isUp = close >= open;
+    ctx.fillStyle = isUp ? "#57C7A3" : "#E8795A";
+    ctx.strokeStyle = ctx.fillStyle;
+
+    const x = 40 + i * barW;
+    const yOpen = priceToY(open);
+    const yClose = priceToY(close);
+    const yHigh = priceToY(high);
+    const yLow = priceToY(low);
+
+    // Wick
+    ctx.beginPath();
+    ctx.moveTo(x + barW / 2, yHigh);
+    ctx.lineTo(x + barW / 2, yLow);
+    ctx.stroke();
+
+    // Body
+    const top = Math.min(yOpen, yClose);
+    const bodyH = Math.max(2, Math.abs(yClose - yOpen));
+    ctx.fillRect(x + 2, top, barW - 4, bodyH);
+  }
+
+  // Horizontal Interactive Lines
+  const drawLine = (val, color, label, dashed = true) => {
+    const y = priceToY(val);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash(dashed ? [5, 4] : []);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+
+    // Tag
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.fillRect(w - 90, y - 10, 85, 20);
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 11px IBM Plex Mono, monospace";
+    ctx.fillText(`${label}: $${val.toFixed(1)}`, w - 85, y + 4);
+  };
+
+  drawLine(chartState.tp, "#57C7A3", "TP", true);
+  drawLine(chartState.limit, "#4fa3e3", "LIMIT", true);
+  drawLine(chartState.price, "#E8B341", "LAST", false);
+  drawLine(chartState.sl, "#E8795A", "SL", true);
+}
+
+["chart-limit-val", "chart-tp-val", "chart-sl-val"].forEach(id => {
+  $(`#${id}`)?.addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val)) {
+      if (id === "chart-limit-val") chartState.limit = val;
+      if (id === "chart-tp-val") chartState.tp = val;
+      if (id === "chart-sl-val") chartState.sl = val;
+      drawChart();
+    }
+  });
+});
+
+$("#apply-chart-to-order")?.addEventListener("click", () => {
+  $("#tx-symbol").value = chartState.symbol;
+  $("#tx-price").value = chartState.limit;
+  toast(`Synced ${chartState.symbol} Limit: $${chartState.limit}, SL: $${chartState.sl}, TP: $${chartState.tp} to desk.`);
+});
+
+// 3. Multi-Agent Deliberation Handler
+$("#mkt-multi-agent-btn")?.addEventListener("click", async (e) => {
+  const sym = ($("#mkt-symbol").value || "AAPL").trim().toUpperCase();
+  const slot = $("#multi-agent-consensus-slot");
+  renderLoading(slot, `Convening multi-agent committee for ${sym}…`, 4);
+
+  await withBusy(e.target, async () => {
+    try {
+      const data = await api("/api/market/multi-agent/deliberate", {
+        method: "POST",
+        body: { symbol: sym, risk_tolerance: "moderate" }
+      });
+      renderMultiAgentConsensus(slot, data);
+    } catch (err) {
+      renderError(slot, err.message, () => $("#mkt-multi-agent-btn").click());
+    }
+  });
+});
+
+function renderMultiAgentConsensus(el, d) {
+  const isVeto = d.risk_veto_applied;
+  const badgeClass = isVeto ? "tag neg" : (d.final_action === "BUY" ? "tag pos" : "tag");
+
+  let opinionsHtml = Object.entries(d.opinions).map(([role, op]) => `
+    <div class="agent-card ${op.veto ? "agent-veto" : ""}">
+      <div class="agent-header">
+        <span class="agent-name">${esc(op.name)}</span>
+        ${op.veto ? `<span class="agent-veto-badge">VETO</span>` : `<span class="tag ${op.action === 'BUY' ? 'pos' : (op.action === 'SELL' ? 'neg' : '')}">${esc(op.action)} (${(op.confidence*100).toFixed(0)}%)</span>`}
+      </div>
+      <p class="agent-thesis">${esc(op.thesis)}</p>
+      ${op.risks_flagged.length ? `<small style="color:var(--loss);display:block;margin-top:4px;">⚠ ${esc(op.risks_flagged.join("; "))}</small>` : ""}
+    </div>
+  `).join("");
+
+  el.innerHTML = `
+    <div class="signal-card" style="border-color:${isVeto ? 'var(--loss)' : 'var(--signal)'};">
+      <div class="signal-top">
+        <span class="eyebrow" style="color:var(--signal);">Multi-Agent Committee Consensus</span>
+        <span class="${badgeClass}">${esc(d.final_action)} (${(d.final_confidence * 100).toFixed(0)}% conviction)</span>
+      </div>
+      <p class="signal-rationale">${esc(d.deliberation_summary)}</p>
+      <div class="agent-grid">${opinionsHtml}</div>
+      <div class="metric-grid" style="margin-top:10px;">
+        <div class="metric"><span class="metric-label">Consensus</span><span class="metric-value">${esc(d.consensus_strength).toUpperCase()}</span></div>
+        <div class="metric"><span class="metric-label">Suggested SL</span><span class="metric-value neg">$${fmt(d.actionable_plan.suggested_stop_loss)}</span></div>
+        <div class="metric"><span class="metric-label">Suggested TP</span><span class="metric-value pos">$${fmt(d.actionable_plan.suggested_take_profit)}</span></div>
+        <div class="metric"><span class="metric-label">R:R Ratio</span><span class="metric-value">${fmt(d.actionable_plan.risk_reward_ratio || 2.0)}x</span></div>
+      </div>
+    </div>
+  `;
+}
+
+// 4. Options Pricing & Greeks Handler
+async function loadOptionsChain() {
+  const sym = ($("#mkt-symbol").value || "AAPL").trim().toUpperCase();
+  const grid = $("#options-greeks-grid");
+  const table = $("#options-chain-table");
+  renderLoading(grid, `Fetching ${sym} Options Chain & Greeks…`, 2);
+
+  try {
+    const chain = await api(`/api/options/chain/${sym}`);
+    const nearestCall = chain.calls[Math.floor(chain.calls.length / 2)] || chain.calls[0];
+    const g = nearestCall.greeks;
+
+    grid.innerHTML = `
+      <div class="metric"><span class="metric-label">ATM Delta (Δ)</span><span class="metric-value">${g.delta.toFixed(3)}</span><span class="metric-sub">Sensitivity</span></div>
+      <div class="metric"><span class="metric-label">Gamma (Γ)</span><span class="metric-value">${g.gamma.toFixed(3)}</span><span class="metric-sub">Delta rate</span></div>
+      <div class="metric"><span class="metric-label">Theta (Θ) / day</span><span class="metric-value neg">$${g.theta.toFixed(2)}</span><span class="metric-sub">Time decay</span></div>
+      <div class="metric"><span class="metric-label">Vega (ν)</span><span class="metric-value">${g.vega.toFixed(2)}</span><span class="metric-sub">Per 1% IV</span></div>
+      <div class="metric"><span class="metric-label">Implied Vol</span><span class="metric-value">${(g.implied_volatility * 100).toFixed(1)}%</span><span class="metric-sub">Annualized</span></div>
+    `;
+
+    table.innerHTML = `
+      <table style="width:100%;font-size:12px;text-align:left;font-family:var(--mono);">
+        <thead><tr style="color:var(--muted);border-bottom:1px solid var(--line);"><th style="padding:6px;">Strike</th><th>Call Bid/Ask</th><th>Put Bid/Ask</th><th>Delta</th><th>Vol</th></tr></thead>
+        <tbody>
+          ${chain.calls.slice(0, 6).map((c, i) => {
+            const p = chain.puts[i] || c;
+            return `<tr style="border-bottom:1px solid var(--line-2);"><td style="padding:6px;color:var(--signal);">$${c.strike}</td><td>$${c.bid}/$${c.ask}</td><td>$${p.bid}/$${p.ask}</td><td>${c.greeks.delta.toFixed(2)}</td><td>${c.volume}</td></tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    renderError(grid, err.message, loadOptionsChain);
+  }
+}
+
+$("#calc-opt-payoff")?.addEventListener("click", async () => {
+  const sym = ($("#mkt-symbol").value || "AAPL").trim().toUpperCase();
+  const type = $("#opt-template-select").value;
+  const slot = $("#options-payoff-slot");
+  renderLoading(slot, "Simulating payoff curve…", 2);
+
+  try {
+    const res = await api("/api/options/strategy-payoff", {
+      method: "POST",
+      body: {
+        strategy_type: type,
+        underlying_symbol: sym,
+        underlying_price: chartState.price,
+        legs: [
+          { is_stock_leg: true, action: "buy", quantity: 100, premium_or_price: chartState.price },
+          { option_type: "call", action: "sell", strike: chartState.price * 1.05, premium_or_price: 3.5, quantity: 1 }
+        ]
+      }
+    });
+    slot.innerHTML = `
+      <div class="signal-card">
+        <span class="eyebrow">${esc(res.strategy_name.toUpperCase())} PAYOFF SIMULATION</span>
+        <p style="margin:6px 0;font-size:13px;">${esc(res.summary_thesis)}</p>
+        <div class="metric-grid">
+          <div class="metric"><span class="metric-label">Max Profit</span><span class="metric-value pos">$${res.max_profit ? fmt(res.max_profit) : 'Unlimited'}</span></div>
+          <div class="metric"><span class="metric-label">Max Loss</span><span class="metric-value neg">$${res.max_loss ? fmt(res.max_loss) : 'Unlimited'}</span></div>
+          <div class="metric"><span class="metric-label">Breakevens</span><span class="metric-value mono">${res.breakeven_points.map(b => '$'+b).join(', ') || 'N/A'}</span></div>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    renderError(slot, err.message, () => $("#calc-opt-payoff").click());
+  }
+});
+
+// 5. Deep RAG 2.0 Ingest & Tone Shift
+$("#rag-ingest-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = {
+    symbol: $("#rag-sym").value.trim().toUpperCase(),
+    doc_type: $("#rag-doc-type").value,
+    title: $("#rag-doc-title").value.trim(),
+    raw_text: $("#rag-doc-text").value.trim(),
+  };
+  await withBusy(e.submitter, async () => {
+    try {
+      await api("/api/rag/ingest", { method: "POST", body });
+      toast("Financial document ingested & indexed into vector store.");
+      e.target.reset();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+});
+
+$("#rag-check-shift")?.addEventListener("click", async () => {
+  const sym = ($("#rag-sym").value || $("#mkt-symbol").value || "AAPL").trim().toUpperCase();
+  const slot = $("#rag-shift-report");
+  renderLoading(slot, `Calculating tone divergence for ${sym}…`, 2);
+  try {
+    const report = await api(`/api/rag/sentiment-shift/${sym}`);
+    slot.innerHTML = `
+      <div class="signal-card">
+        <span class="eyebrow">Executive Tone &amp; Q&amp;A Divergence (${esc(report.fiscal_period)})</span>
+        <p style="margin:6px 0;font-size:13px;">${esc(report.management_tone_summary)}</p>
+        <div class="metric-grid">
+          <div class="metric"><span class="metric-label">Prepared Remarks</span><span class="metric-value">${report.prepared_remarks_sentiment > 0 ? '+' : ''}${report.prepared_remarks_sentiment.toFixed(2)}</span></div>
+          <div class="metric"><span class="metric-label">Q&A Unfiltered</span><span class="metric-value">${report.qa_session_sentiment > 0 ? '+' : ''}${report.qa_session_sentiment.toFixed(2)}</span></div>
+          <div class="metric"><span class="metric-label">Sentiment Shift</span><span class="metric-value ${report.sentiment_divergence < -0.1 ? 'neg' : 'pos'}">${report.sentiment_divergence > 0 ? '+' : ''}${report.sentiment_divergence.toFixed(2)}</span></div>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    renderError(slot, err.message, () => $("#rag-check-shift").click());
+  }
+});
+
+// 6. Strategy Marketplace & Copy-Trading Leaderboard
+async function loadMarketplace() {
+  const list = $("#mp-leaderboard-list");
+  renderLoading(list, "Loading strategy leaderboard…", 3);
+  try {
+    const data = await api("/api/marketplace/leaderboard");
+    if (!data.length) {
+      renderEmpty(list, "No strategies published yet", "Be the first to publish an algorithm.");
+      return;
+    }
+    list.innerHTML = `
+      <table style="width:100%;font-size:12.5px;text-align:left;font-family:var(--mono);">
+        <thead><tr style="color:var(--muted);border-bottom:1px solid var(--line);"><th style="padding:8px;">Strategy</th><th>Author</th><th>Sharpe</th><th>CAGR</th><th>Max DD</th><th>Action</th></tr></thead>
+        <tbody>
+          ${data.map(s => `
+            <tr style="border-bottom:1px solid var(--line-2);">
+              <td style="padding:8px;"><strong>${esc(s.name)}</strong><br/><small style="color:var(--muted);">${esc(s.category)}</small></td>
+              <td>${esc(s.publisher_name)}</td>
+              <td style="color:var(--gain);">${s.sharpe_ratio.toFixed(2)}</td>
+              <td style="color:var(--gain);">+${s.cagr_pct.toFixed(1)}%</td>
+              <td style="color:var(--loss);">${s.max_drawdown_pct.toFixed(1)}%</td>
+              <td><button class="btn btn-solid btn-sm copy-btn" data-id="${s.strategy_id}">Mirror Copy</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+    list.querySelectorAll(".copy-btn").forEach(b => {
+      b.addEventListener("click", async () => {
+        try {
+          await api("/api/marketplace/subscribe", {
+            method: "POST",
+            body: { strategy_id: parseInt(b.dataset.id, 10), allocated_capital: 2500.0, copy_mode: "paper" }
+          });
+          toast("Subscribed! Orders will mirror in Paper Trading mode.");
+        } catch (err) {
+          toast(err.message, true);
+        }
+      });
+    });
+  } catch (err) {
+    renderError(list, err.message, loadMarketplace);
+  }
+}
+
+// Hook into market read to auto-refresh interactive chart
+const origMktRead = $("#mkt-read");
+if (origMktRead) {
+  const origHandler = origMktRead.onclick;
+  origMktRead.addEventListener("click", () => {
+    const sym = ($("#mkt-symbol").value || "AAPL").trim().toUpperCase();
+    initInteractiveChart(sym, chartState.price);
+  });
+}
+
+// Initialize interactive chart on boot
+initInteractiveChart("AAPL", 150.0);
+
+/* ---------- workspace navigation ---------- */
+function navigateWorkspace(targetId) {
+  const target = document.getElementById(targetId);
+  if (!target) return;
+  target.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  document.querySelectorAll("[data-scroll-target]").forEach((button) =>
+    button.classList.toggle("is-current", button.dataset.scrollTarget === targetId));
+}
+document.querySelectorAll("[data-scroll-target]").forEach((button) => {
+  button.addEventListener("click", () => navigateWorkspace(button.dataset.scrollTarget));
+});
+document.querySelectorAll("[data-open-view]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const view = button.dataset.openView;
+    const tab = document.querySelector(".pill[data-view='" + view + "']");
+    if (tab) tab.click();
+    navigateWorkspace("instrument");
+  });
+});
 
 /* ---------- BOOT ---------- */
 store.t ? showDeck() : showAuth();

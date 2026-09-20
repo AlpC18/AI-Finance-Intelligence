@@ -9,19 +9,84 @@ from app.core.deps import (
     get_performance_service,
     get_portfolio_service,
     get_quant_service,
+    get_tax_lot_service,
+    get_goal_service,
+    get_rebalance_service,
 )
 from app.core.rate_limit import AI_RATE_LIMIT, limiter
 from app.db.database import get_session
 from app.models.performance import PerformanceReport
 from app.models.portfolio import Advice, RiskReport
-from app.models.quant import CorrelationMatrix, OptimizationReport
+from app.models.quant import (
+    CorrelationMatrix,
+    MonteCarloReport,
+    MonteCarloRequest,
+    OptimizationReport,
+)
 from app.models.transaction import Holding, TransactionCreate, TransactionRead
 from app.models.user import User
+from app.models.tax import LotMethod, TaxLotReport
+from app.services.tax_lot_service import TaxLotService
+from app.models.goals import PortfolioGoalProgress, PortfolioGoalUpdate
+from app.models.rebalance import RebalancePlan, RebalanceRequest
+from app.services.goal_service import GoalService
+from app.services.rebalance_service import RebalanceService
+from datetime import datetime, timezone
 from app.services.performance_service import PerformanceService
 from app.services.portfolio_service import PortfolioService
 from app.services.quant_service import QuantService
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+
+
+@router.put("/goal", response_model=PortfolioGoalProgress)
+async def set_goal(data: PortfolioGoalUpdate, user: User = Depends(get_current_user),
+                   session: Session = Depends(get_session),
+                   service: GoalService = Depends(get_goal_service)) -> PortfolioGoalProgress:
+    service.set(session, user.id, data)
+    return await service.progress(session, user.id)
+
+
+@router.get("/goal", response_model=PortfolioGoalProgress)
+async def goal_progress(user: User = Depends(get_current_user), session: Session = Depends(get_session),
+                        service: GoalService = Depends(get_goal_service)) -> PortfolioGoalProgress:
+    return await service.progress(session, user.id)
+
+
+@router.post("/rebalance/plan", response_model=RebalancePlan)
+async def rebalance_plan(data: RebalanceRequest, user: User = Depends(get_current_user),
+                         session: Session = Depends(get_session),
+                         service: RebalanceService = Depends(get_rebalance_service)) -> RebalancePlan:
+    return await service.plan(session, user.id, data)
+
+
+@router.get("/tax-lots", response_model=TaxLotReport)
+def tax_lots(
+    year: int = Query(default_factory=lambda: datetime.now(timezone.utc).year, ge=2000, le=2100),
+    method: LotMethod = Query(default="FIFO"),
+    user: User = Depends(get_current_user), session: Session = Depends(get_session),
+    service: TaxLotService = Depends(get_tax_lot_service),
+) -> TaxLotReport:
+    """Realized gain/loss and remaining tax lots from the immutable ledger."""
+    return service.report(session, user.id, year, method)
+
+
+@router.get("/export/tax-lots", response_class=PlainTextResponse)
+def export_tax_lots(
+    year: int = Query(default_factory=lambda: datetime.now(timezone.utc).year, ge=2000, le=2100),
+    method: LotMethod = Query(default="FIFO"),
+    user: User = Depends(get_current_user), session: Session = Depends(get_session),
+    service: TaxLotService = Depends(get_tax_lot_service),
+) -> PlainTextResponse:
+    report = service.report(session, user.id, year, method)
+    body = to_csv(
+        ["symbol", "acquired_at", "sold_at", "quantity", "cost_basis", "proceeds", "gain_loss", "term"],
+        [(r.symbol, r.acquired_at.isoformat(), r.sold_at.isoformat(), r.quantity,
+          r.cost_basis, r.proceeds, r.gain_loss, r.term) for r in report.realized],
+    )
+    return PlainTextResponse(body, media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": content_disposition(f"tax-lots-{year}-{method.lower()}.csv"),
+    })
 
 
 @router.post("/transactions", response_model=TransactionRead, status_code=201)
@@ -140,6 +205,19 @@ async def optimize(
 ) -> OptimizationReport:
     """Markowitz max-Sharpe target weights vs. the current allocation."""
     return await quant.optimize(session, user.id)
+
+
+@router.post("/monte-carlo", response_model=MonteCarloReport)
+@limiter.limit(AI_RATE_LIMIT)
+async def monte_carlo(
+    request: Request,
+    data: MonteCarloRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    quant: QuantService = Depends(get_quant_service),
+) -> MonteCarloReport:
+    """Historical-bootstrap terminal-value distribution for active holdings."""
+    return await quant.monte_carlo(session, user.id, data)
 
 
 @router.get("/performance", response_model=PerformanceReport)

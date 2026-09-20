@@ -1,11 +1,12 @@
 """Authentication endpoints: register, login, refresh, logout (JWT + blocklist)."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session
 
 from app.core.auth import bearer_scheme, get_current_user
 from app.core.config import get_settings
-from app.core.deps import get_auth_service, get_token_store
+from app.core.deps import get_activity_service, get_auth_service, get_token_store
+from app.core.rate_limit import LOGIN_RATE_LIMIT, REGISTER_RATE_LIMIT, limiter
 from app.core.security import decode_token, remaining_ttl_seconds
 from app.core.token_store import TokenBlocklist
 from app.db.database import get_session
@@ -19,6 +20,7 @@ from app.models.user import (
     UserRead,
 )
 from app.services.auth_service import AuthService
+from app.services.activity_service import ActivityService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -28,26 +30,50 @@ _UNAUTHORIZED = HTTPException(
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
+@limiter.limit(REGISTER_RATE_LIMIT)
 def register(
+    request: Request,
     data: UserCreate,
     session: Session = Depends(get_session),
     service: AuthService = Depends(get_auth_service),
+    activity: ActivityService = Depends(get_activity_service),
 ) -> UserRead:
+    """Create an account. IP-capped: bulk registration is how throwaway
+    accounts get farmed, and there is no legitimate caller who needs to open
+    accounts faster than a person can fill in a form."""
     user = service.register(session, data)
+    activity.record(session, user.id, "security", "Account registered")
+    session.commit()
     return UserRead(id=user.id, email=user.email, created_at=user.created_at)
 
 
 @router.post("/login", response_model=TokenPair)
+@limiter.limit(LOGIN_RATE_LIMIT)
 def login(
+    request: Request,
     data: UserLogin,
     session: Session = Depends(get_session),
     service: AuthService = Depends(get_auth_service),
+    activity: ActivityService = Depends(get_activity_service),
 ) -> TokenPair:
+    """Exchange credentials for a token pair.
+
+    The cap is the only thing standing between a leaked password list and this
+    endpoint: without it an attacker can test credentials as fast as the server
+    answers, and bcrypt alone just makes that expensive for US too. Keyed by IP
+    because an unauthenticated caller has no user identity to key on.
+
+    The failure response is deliberately identical for an unknown email and a
+    wrong password - a distinguishable answer turns this into an account
+    enumeration oracle.
+    """
     user = service.authenticate(session, data.email, data.password)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="E-posta veya sifre hatali."
         )
+    activity.record(session, user.id, "security", "Successful login")
+    session.commit()
     return service.issue_tokens(user)
 
 

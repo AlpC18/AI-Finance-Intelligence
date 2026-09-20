@@ -16,6 +16,8 @@ from app.models.backtest import (
     BacktestReport,
     BacktestRequest,
     BacktestRunPage,
+    WalkForwardReport,
+    WalkForwardRequest,
 )
 from app.models.user import User
 from app.services.backtest_service import BacktestService
@@ -24,6 +26,16 @@ router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
 # Bounded so one request cannot ask for an unbounded IN(...) of run ids.
 _MAX_COMPARE = 10
+
+
+@router.post("/walk-forward", response_model=WalkForwardReport)
+@limiter.limit(AI_RATE_LIMIT)
+async def walk_forward(
+    request: Request, data: WalkForwardRequest, user: User = Depends(get_current_user),
+    service: BacktestService = Depends(get_backtest_service),
+) -> WalkForwardReport:
+    """Out-of-sample validation and an explicit overfitting-risk signal."""
+    return await service.walk_forward(data)
 
 
 @router.post("/run", response_model=BacktestReport)

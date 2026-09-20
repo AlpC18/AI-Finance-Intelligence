@@ -3,9 +3,11 @@
 These mirror exactly what the server emits, so the frontend can type its socket
 handlers against a single source of truth (exposed via /api/meta/contracts).
 """
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel
+from app.core.money import Money
 
 WS_INSIGHTS_PATH = "/ws/insights/{symbol}"
 WS_ACCOUNT_PATH = "/ws/account"
@@ -40,7 +42,7 @@ class WsAlertFrame(BaseModel):
     alert_id: int | None = None
     symbol: str
     condition: str
-    threshold: float | None = None
+    threshold: Money | None = None
     triggered_at: str
 
 
@@ -66,8 +68,8 @@ class WsOrderFrame(BaseModel):
     symbol: str
     side: str
     status: str
-    filled_quantity: float = 0.0
-    filled_avg_price: float | None = None
+    filled_quantity: Money = Decimal(0)
+    filled_avg_price: Money | None = None
     reconciled: bool = False
 
 
@@ -81,7 +83,7 @@ class WsHaltFrame(BaseModel):
 
     type: Literal["halt"] = "halt"
     reason: str
-    drawdown_pct: float = 0.0
-    daily_loss_limit_pct: float = 0.0
+    drawdown_pct: Money = Decimal(0)
+    daily_loss_limit_pct: Money = Decimal(0)
     canceled_orders: int = 0
     halted_at: str

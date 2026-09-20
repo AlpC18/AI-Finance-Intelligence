@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.models.backtest import BacktestRequest
+from app.models.backtest import BacktestRequest, WalkForwardRequest
 from app.services.backtest_service import BacktestService
 
 
@@ -37,6 +37,15 @@ async def test_backtest_runs_and_produces_metrics_and_curve():
 async def test_backtest_max_drawdown_is_non_positive():
     report = await BacktestService(_FakeProvider()).run(BacktestRequest(symbol="AAPL"))
     assert report.metrics.max_drawdown_pct <= 0.0
+
+
+@pytest.mark.asyncio
+async def test_walk_forward_reports_out_of_sample_folds_and_overfitting_signal():
+    report = await BacktestService(_FakeProvider()).walk_forward(
+        WalkForwardRequest(symbol="AAPL", period="1y", warmup=15, folds=2, test_bars=20)
+    )
+    assert len(report.folds) == 2
+    assert report.overfitting_risk in {"low", "moderate", "high"}
 
 
 def test_backtest_endpoint_returns_report(client, auth_headers):

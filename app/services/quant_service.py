@@ -13,7 +13,13 @@ from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.errors import AppError
-from app.models.quant import CorrelationMatrix, OptimizationReport, OptimizedWeight
+from app.models.quant import (
+    CorrelationMatrix,
+    MonteCarloReport,
+    MonteCarloRequest,
+    OptimizationReport,
+    OptimizedWeight,
+)
 from app.providers.base import MarketDataProvider
 from app.services.portfolio_service import PortfolioService
 
@@ -69,10 +75,45 @@ class QuantService:
         frame, qty = await self._price_frame(session, user_id)
         symbols = list(frame.columns)
         last_prices = frame.iloc[-1].to_numpy(dtype=float)
-        current = _current_weights(np.array([qty[s] for s in symbols]), last_prices)
+        # The optimiser is statistics, not accounting: quantities cross to
+        # float64 here, at the numpy boundary, and the exact Decimal ledger
+        # values stay behind it.
+        current = _current_weights(
+            np.array([float(qty[s]) for s in symbols], dtype=float), last_prices
+        )
         returns = frame.pct_change().dropna().to_numpy(dtype=float)
         return await run_in_threadpool(
             _optimize, returns, symbols, current, weight_cap, samples
+        )
+
+    async def monte_carlo(
+        self,
+        session: Session,
+        user_id: int,
+        request: MonteCarloRequest,
+    ) -> MonteCarloReport:
+        """Simulate terminal values by bootstrapping observed daily return rows.
+
+        Sampling complete rows keeps the historical cross-asset correlation
+        structure intact. This is a risk distribution, not a forecast or a
+        trading recommendation.
+        """
+        frame, qty = await self._price_frame(session, user_id)
+        symbols = list(frame.columns)
+        last_prices = frame.iloc[-1].to_numpy(dtype=float)
+        values = np.array([float(qty[s]) for s in symbols], dtype=float) * last_prices
+        starting_value = float(values.sum())
+        if starting_value <= 0:
+            raise AppError("Portföy değeri pozitif olmalidir.", status_code=422)
+        returns = frame.pct_change().dropna().to_numpy(dtype=float)
+        weights = values / starting_value
+        return await run_in_threadpool(
+            _monte_carlo,
+            returns,
+            symbols,
+            weights,
+            starting_value,
+            request,
         )
 
 
@@ -152,4 +193,57 @@ def _report(
         sharpe_ratio=round(sharpe, 4),
         concentration_hhi=round(float(np.sum(target ** 2)), 4),
         samples_evaluated=samples,
+    )
+
+
+def _monte_carlo(
+    asset_returns: np.ndarray,
+    symbols: list[str],
+    weights: np.ndarray,
+    starting_value: float,
+    request: MonteCarloRequest,
+) -> MonteCarloReport:
+    """Historical-bootstrap portfolio paths in bounded batches.
+
+    The batch size prevents a large request from allocating a full
+    ``simulations * horizon_days * asset_count`` cube at once.
+    """
+    if asset_returns.shape[0] < _MIN_ROWS or not np.isfinite(asset_returns).all():
+        raise AppError("Simülasyon için yeterli geçerli getiri verisi yok.", status_code=422)
+
+    rng = np.random.default_rng(0)  # reproducible output for identical input data
+    terminal_values = np.empty(request.simulations, dtype=float)
+    batch_size = 256
+    for start in range(0, request.simulations, batch_size):
+        stop = min(start + batch_size, request.simulations)
+        rows = rng.integers(0, asset_returns.shape[0], size=(stop - start, request.horizon_days))
+        portfolio_returns = asset_returns[rows] @ weights
+        terminal_values[start:stop] = starting_value * np.prod(1.0 + portfolio_returns, axis=1)
+
+    total_returns = terminal_values / starting_value - 1.0
+    lower_tail = np.percentile(total_returns, 5)
+    expected_shortfall = total_returns[total_returns <= lower_tail].mean()
+    target = (
+        request.target_return_pct / 100.0
+        if request.target_return_pct is not None
+        else None
+    )
+    return MonteCarloReport(
+        method="historical_bootstrap",
+        symbols=symbols,
+        horizon_days=request.horizon_days,
+        simulations=request.simulations,
+        starting_value=round(starting_value, 2),
+        median_terminal_value=round(float(np.percentile(terminal_values, 50)), 2),
+        percentile_05_value=round(float(np.percentile(terminal_values, 5)), 2),
+        percentile_95_value=round(float(np.percentile(terminal_values, 95)), 2),
+        probability_of_loss_pct=round(float(np.mean(total_returns < 0) * 100), 2),
+        value_at_risk_95_pct=round(float(max(0.0, -lower_tail) * 100), 2),
+        expected_shortfall_95_pct=round(float(max(0.0, -expected_shortfall) * 100), 2),
+        target_return_pct=request.target_return_pct,
+        probability_of_target_pct=(
+            round(float(np.mean(total_returns >= target) * 100), 2)
+            if target is not None
+            else None
+        ),
     )

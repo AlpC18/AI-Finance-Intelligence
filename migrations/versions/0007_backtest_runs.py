@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("strategy", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         # The request, so a stored number stays attributable to what produced it.
         sa.Column("period", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("initial_capital", sa.Float(), nullable=False),
+        sa.Column("initial_capital", sa.Numeric(28, 8), nullable=False),
         sa.Column("rsi_buy", sa.Float(), nullable=False),
         sa.Column("rsi_sell", sa.Float(), nullable=False),
         sa.Column("warmup", sa.Integer(), nullable=False),
@@ -44,11 +44,11 @@ def upgrade() -> None:
         # Nullable: undefined when a run had no losing trade. NULL is "cannot be
         # ranked", which is not the same as a profit factor of zero.
         sa.Column("profit_factor", sa.Float(), nullable=True),
-        sa.Column("expectancy", sa.Float(), nullable=False),
-        sa.Column("max_drawdown_pct", sa.Float(), nullable=False),
+        sa.Column("expectancy", sa.Numeric(28, 8), nullable=False),
+        sa.Column("max_drawdown_pct", sa.Numeric(28, 8), nullable=False),
         sa.Column("sharpe_ratio", sa.Float(), nullable=False),
-        sa.Column("total_return_pct", sa.Float(), nullable=False),
-        sa.Column("final_equity", sa.Float(), nullable=False),
+        sa.Column("total_return_pct", sa.Numeric(28, 8), nullable=False),
+        sa.Column("final_equity", sa.Numeric(28, 8), nullable=False),
         sa.Column("report_json", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"]),

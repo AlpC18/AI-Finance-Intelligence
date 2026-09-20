@@ -31,8 +31,8 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False),
         sa.Column("symbol", sa.String(), nullable=False),
         sa.Column("action", sa.String(), nullable=False),
-        sa.Column("quantity", sa.Float(), nullable=False),
-        sa.Column("price", sa.Float(), nullable=False),
+        sa.Column("quantity", sa.Numeric(28, 8), nullable=False),
+        sa.Column("price", sa.Numeric(28, 8), nullable=False),
         sa.Column("timestamp", sa.DateTime(), nullable=False),
     )
     op.create_index("ix_transaction_user_id", "transaction", ["user_id"])
@@ -46,7 +46,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False),
         sa.Column("symbol", sa.String(), nullable=False),
         sa.Column("condition_type", sa.String(), nullable=False),
-        sa.Column("threshold_value", sa.Float(), nullable=True),
+        sa.Column("threshold_value", sa.Numeric(28, 8), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("last_triggered_at", sa.DateTime(), nullable=True),

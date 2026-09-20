@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 from sqlmodel import Session, select
 
+from app.core.money import ZERO, to_decimal
 from app.core.metrics import record_fill_reconciled
 from app.core.tracing import span
 from app.models.order import TradeOrder, is_terminal
@@ -176,8 +177,8 @@ class TradeReconciliationService:
         }
         items: list[DriftItem] = []
         for symbol in sorted(set(broker_qty) | set(ledger_qty)):
-            b = broker_qty.get(symbol, 0.0)
-            local = ledger_qty.get(symbol, 0.0)
+            b = broker_qty.get(symbol, ZERO)
+            local = ledger_qty.get(symbol, ZERO)
             if abs(b - local) > _EPS:
                 items.append(
                     DriftItem(

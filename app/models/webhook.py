@@ -6,10 +6,12 @@ these models rely on Pydantic's lax numeric coercion. Unknown keys are ignored,
 never trusted.
 """
 from __future__ import annotations
+from decimal import Decimal
 
 from typing import Optional
 
 from pydantic import BaseModel, Field
+from app.core.money import Money
 
 
 class WebhookOrder(BaseModel):
@@ -19,8 +21,8 @@ class WebhookOrder(BaseModel):
     symbol: str = ""
     side: str = ""
     status: str = ""
-    filled_qty: float = 0.0
-    filled_avg_price: Optional[float] = None
+    filled_qty: Money = Decimal(0)
+    filled_avg_price: Optional[Money] = None
 
 
 class AlpacaTradeUpdate(BaseModel):

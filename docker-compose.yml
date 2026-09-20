@@ -11,7 +11,7 @@
 #   docker compose down -v        -> stop and drop volumes
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: timescale/timescaledb-ha:pg16
     environment:
       POSTGRES_USER: afi
       POSTGRES_PASSWORD: afi
@@ -59,6 +59,8 @@ services:
       DATABASE_URL: postgresql://afi:afi@db:5432/afi
       CACHE_BACKEND: redis
       REDIS_URL: redis://redis:6379/0
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      WORKER_QUEUE_ENABLED: ${WORKER_QUEUE_ENABLED:-true}
       JWT_SECRET: ${JWT_SECRET:-local-only-development-secret-at-least-32-bytes}
       # Optional: leave empty to run in degraded mode (quant readings, no AI text).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -83,6 +85,26 @@ services:
       timeout: 5s
       retries: 20
       start_period: 20s
+
+  worker:
+    image: ${API_IMAGE:-ai-finance-intelligence:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://afi:afi@db:5432/afi
+      CACHE_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      WORKER_QUEUE_ENABLED: "true"
+      JWT_SECRET: ${JWT_SECRET:-local-only-development-secret-at-least-32-bytes}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      TRADING_MODE: ${TRADING_MODE:-paper}
+    command: python scripts/worker.py
 
 volumes:
   db-data:

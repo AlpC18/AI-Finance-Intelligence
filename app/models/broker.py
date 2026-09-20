@@ -1,11 +1,13 @@
 """Broker trade-execution schemas + encrypted-at-rest credential model."""
+from decimal import Decimal
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field as PField, model_validator
 from sqlmodel import Field, SQLModel
+from app.core.money import Money
 
-BrokerName = Literal["alpaca"]
+BrokerName = Literal["alpaca", "binance", "ibkr"]
 OrderSide = Literal["buy", "sell"]
 OrderType = Literal["market", "limit"]
 TimeInForce = Literal["day", "gtc", "ioc", "fok"]
@@ -47,11 +49,17 @@ class TradeRequest(BaseModel):
     """An execution request derived from an AI signal."""
 
     symbol: str = PField(min_length=1, max_length=20)
+    broker: BrokerName = "alpaca"
     action: Literal["BUY", "SELL", "HOLD"]
-    quantity: float = PField(gt=0)
+    quantity: Money = PField(gt=0)
     confidence: Optional[float] = PField(default=None, ge=0.0, le=1.0)
     order_type: OrderType = "market"
-    limit_price: Optional[float] = PField(default=None, gt=0)
+    limit_price: Optional[Money] = PField(default=None, gt=0)
+    # Protective exits are attached to the entry as a broker-side bracket.
+    # They are persisted on the local order too, so reconciliation/audit can
+    # explain the risk the trader actually accepted.
+    stop_loss: Optional[Money] = PField(default=None, gt=0)
+    take_profit: Optional[Money] = PField(default=None, gt=0)
     time_in_force: TimeInForce = "day"
     ai_context: Optional[str] = PField(default=None, max_length=4000)  # for audit log
     # Client-supplied de-duplication token. Two submissions carrying the same
@@ -62,15 +70,23 @@ class TradeRequest(BaseModel):
         default=None, min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
     )
 
+    @model_validator(mode="after")
+    def _bracket_is_complete(self) -> "TradeRequest":
+        if (self.stop_loss is None) != (self.take_profit is None):
+            raise ValueError("stop_loss and take_profit must be provided together")
+        return self
+
 
 class OrderRequest(BaseModel):
     """Normalized order handed to a BrokerProvider (internal boundary type)."""
 
     symbol: str
     side: OrderSide
-    quantity: float
+    quantity: Money
     order_type: OrderType = "market"
-    limit_price: Optional[float] = None
+    limit_price: Optional[Money] = None
+    stop_loss: Optional[Money] = None
+    take_profit: Optional[Money] = None
     time_in_force: TimeInForce = "day"
     # Sent to the venue so the BROKER rejects a duplicate even if our own
     # pre-check loses a race. Always populated by TradeService.
@@ -85,8 +101,8 @@ class OrderAmendment(BaseModel):
     position, so it is rejected rather than forwarded.
     """
 
-    quantity: Optional[float] = PField(default=None, gt=0)
-    limit_price: Optional[float] = PField(default=None, gt=0)
+    quantity: Optional[Money] = PField(default=None, gt=0)
+    limit_price: Optional[Money] = PField(default=None, gt=0)
 
     @model_validator(mode="after")
     def _at_least_one_change(self) -> "OrderAmendment":
@@ -101,11 +117,11 @@ class BrokerOrder(BaseModel):
     id: str
     symbol: str
     side: OrderSide
-    quantity: float
+    quantity: Money
     order_type: str
     status: str
-    filled_quantity: float = 0.0
-    filled_avg_price: Optional[float] = None
+    filled_quantity: Money = Decimal(0)
+    filled_avg_price: Optional[Money] = None
     submitted_at: Optional[str] = None
 
 
@@ -113,9 +129,9 @@ class BrokerPosition(BaseModel):
     """Normalized broker-held position (for ledger drift reconciliation)."""
 
     symbol: str
-    quantity: float
-    avg_entry_price: float = 0.0
-    market_value: float = 0.0
+    quantity: Money
+    avg_entry_price: Money = Decimal(0)
+    market_value: Money = Decimal(0)
     side: str = "long"
 
 
@@ -123,8 +139,8 @@ class BrokerAccount(BaseModel):
     account_number: str
     status: str
     currency: str = "USD"
-    cash: float = 0.0
-    buying_power: float = 0.0
+    cash: Money = Decimal(0)
+    buying_power: Money = Decimal(0)
 
 
 class TradeResult(BaseModel):

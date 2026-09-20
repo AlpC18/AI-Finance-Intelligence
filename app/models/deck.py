@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.models.risk import KillSwitchStatus, RiskConfigRead
 from app.models.ws import WS_INSIGHTS_PATH
+from app.core.money import Money
 
 
 class WsContract(BaseModel):
@@ -20,7 +21,7 @@ class TradeDeckState(BaseModel):
     open_orders: int
     kill_switch: KillSwitchStatus
     risk_config: RiskConfigRead
-    max_order_notional: float
+    max_order_notional: Money
     min_trade_confidence: float
     trade_enabled: bool
     ws: WsContract = WsContract()

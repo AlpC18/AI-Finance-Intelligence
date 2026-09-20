@@ -26,3 +26,8 @@ htmlcov/
 .ignore
 graft/
 .claude/settings.local.json
+__pycache__/
+venv/
+.env
+*.db
+*.sqlite3

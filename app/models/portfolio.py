@@ -2,27 +2,28 @@
 from typing import Optional
 
 from pydantic import BaseModel, Field as PField
+from app.core.money import Money
 
 
 class PositionRisk(BaseModel):
     symbol: str
-    quantity: float
-    avg_cost: float
-    current_price: float
-    market_value: float
-    realized_pnl: float
-    unrealized_pnl: float
-    pnl_pct: float
-    weight_pct: float
+    quantity: Money
+    avg_cost: Money
+    current_price: Money
+    market_value: Money
+    realized_pnl: Money
+    unrealized_pnl: Money
+    pnl_pct: Money
+    weight_pct: Money
     volatility_annual: Optional[float] = None
     max_drawdown_pct: Optional[float] = None
     var_95_pct: Optional[float] = None
 
 
 class RiskReport(BaseModel):
-    total_value: float
-    total_realized_pnl: float
-    total_unrealized_pnl: float
+    total_value: Money
+    total_realized_pnl: Money
+    total_unrealized_pnl: Money
     positions: list[PositionRisk]
 
 

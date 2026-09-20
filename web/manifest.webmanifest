@@ -1,0 +1,9 @@
+{
+  "name": "AI Finance Intelligence",
+  "short_name": "AFI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#11110f",
+  "theme_color": "#11110f",
+  "description": "Research and paper-trading instrument deck."
+}

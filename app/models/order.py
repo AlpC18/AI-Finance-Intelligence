@@ -1,10 +1,12 @@
 """Persisted broker orders + append-only trade audit log (compliance)."""
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Literal, Optional
 
 from pydantic import BaseModel
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
+from app.core.money import Money, MONEY_DIGITS, MONEY_PLACES
 
 OrderStatus = Literal[
     "pending", "new", "accepted", "partially_filled",
@@ -58,11 +60,13 @@ class TradeOrder(SQLModel, table=True):
     broker_order_id: str = Field(index=True)
     symbol: str = Field(index=True)
     side: str  # buy | sell
-    quantity: float
+    quantity: Money = Field(max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES)
     order_type: str = "market"
     status: str = Field(default="pending", index=True)
-    filled_quantity: float = 0.0
-    filled_avg_price: Optional[float] = None
+    filled_quantity: Money = Field(default=Decimal(0), max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES)
+    filled_avg_price: Optional[Money] = Field(default=None, max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES)
+    stop_loss: Optional[Money] = Field(default=None, max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES)
+    take_profit: Optional[Money] = Field(default=None, max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES)
     reconciled: bool = Field(default=False, index=True)  # written into the ledger?
     # De-duplication token, unique per user (see migration 0006). Nullable for
     # rows written before idempotency existed - those genuinely have no key.
@@ -75,10 +79,12 @@ class OrderRead(BaseModel):
     id: int
     symbol: str
     side: str
-    quantity: float
+    quantity: Money
     status: str
-    filled_quantity: float
-    filled_avg_price: Optional[float] = None
+    filled_quantity: Money
+    filled_avg_price: Optional[Money] = None
+    stop_loss: Optional[Money] = None
+    take_profit: Optional[Money] = None
     reconciled: bool
     created_at: datetime
     updated_at: datetime
@@ -112,8 +118,8 @@ class AuditLogRead(BaseModel):
     raw_ai_context: str
     symbol: Optional[str] = None
     status: Optional[str] = None
-    filled_quantity: Optional[float] = None
-    filled_avg_price: Optional[float] = None
+    filled_quantity: Optional[Money] = None
+    filled_avg_price: Optional[Money] = None
 
 
 class AuditLogPage(BaseModel):

@@ -197,3 +197,40 @@ def test_one_user_hitting_the_cap_does_not_lock_out_another(limited_client):
 def test_the_limiter_is_off_for_the_ordinary_suite(client):
     """Guards the fixture contract the other 400+ tests depend on."""
     assert client.app.state.limiter.enabled is False
+
+
+# ========================= THE CREDENTIAL ENDPOINTS =========================
+# These are the only capped routes an ATTACKER can reach without an account,
+# so they are the ones that matter for credential stuffing. They are keyed by
+# IP by necessity: there is no authenticated identity to key on yet.
+
+def test_login_eventually_answers_429(limited_client):
+    """Without this cap, a leaked password list can be tested at wire speed."""
+    limited_client.post(
+        "/api/auth/register",
+        json={"email": "victim@example.com", "password": "password123"},
+    )
+
+    codes = [
+        limited_client.post(
+            "/api/auth/login",
+            json={"email": "victim@example.com", "password": f"guess-{i}"},
+        ).status_code
+        for i in range(25)
+    ]
+
+    assert 429 in codes, f"login cap never bit, saw {sorted(set(codes))}"
+    # The guesses that got through must still have been rejected on merit.
+    assert 200 not in codes, "a wrong password was accepted"
+
+
+def test_register_eventually_answers_429(limited_client):
+    codes = [
+        limited_client.post(
+            "/api/auth/register",
+            json={"email": f"farm-{i}@example.com", "password": "password123"},
+        ).status_code
+        for i in range(20)
+    ]
+
+    assert 429 in codes, f"register cap never bit, saw {sorted(set(codes))}"

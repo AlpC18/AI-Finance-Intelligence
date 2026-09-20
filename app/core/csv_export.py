@@ -13,6 +13,8 @@ which is the accepted cost - a visible quote beats a silently executed formula.
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 import csv
 import io
 from typing import Any, Iterable, Sequence
@@ -34,6 +36,15 @@ def sanitize_cell(value: Any) -> str:
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return str(value)
+    if isinstance(value, Decimal):
+        # Render at natural scale: a quantity stored as NUMERIC(28,8) is
+        # `3.00000000`, and eight trailing zeros in every cell is noise a
+        # spreadsheet reader has to strip back off.
+        normalized = value.normalize()
+        _, _, exponent = normalized.as_tuple()
+        if isinstance(exponent, int) and exponent > 0:  # 1E+2 -> 100
+            normalized = normalized.quantize(Decimal(1))
+        return format(normalized, "f")
     text = str(value)
     if text.startswith(_FORMULA_PREFIXES):
         return "'" + text

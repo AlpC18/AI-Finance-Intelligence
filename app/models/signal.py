@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
+from app.core.money import Money
 
 
 class SignalOutcome(BaseModel):
@@ -21,11 +22,11 @@ class SignalOutcome(BaseModel):
     signal_type: str  # BUY | SELL
     confidence: Optional[float] = None
     executed_at: datetime
-    fill_price: float
-    quantity: float
-    reference_price: float  # latest quote used to mark the position
+    fill_price: Money
+    quantity: Money
+    reference_price: Money  # latest quote used to mark the position
     return_pct: float  # signed FOR the signal: a SELL profits when price falls
-    pnl: float  # return_pct applied to the filled notional
+    pnl: Money  # return_pct applied to the filled notional
     correct: bool  # did the market move the way the signal said?
 
 
@@ -38,7 +39,7 @@ class ConfidenceBucket(BaseModel):
     signals: int
     hit_rate_pct: float
     avg_return_pct: float
-    total_pnl: float
+    total_pnl: Money
 
 
 class SignalScorecard(BaseModel):
@@ -47,7 +48,7 @@ class SignalScorecard(BaseModel):
     skipped_unpriced: int  # symbols the market feed could not quote
     hit_rate_pct: float
     avg_return_pct: float
-    total_pnl: float
+    total_pnl: Money
     buckets: list[ConfidenceBucket] = []
     best: Optional[SignalOutcome] = None
     worst: Optional[SignalOutcome] = None

@@ -68,3 +68,5 @@ services:
       # --- Broker execution (paper by default) ---
       - key: ALPACA_BASE_URL
         value: https://paper-api.alpaca.markets
+      - key: TRADING_MODE
+        value: paper

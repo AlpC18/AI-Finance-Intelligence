@@ -30,6 +30,12 @@ class Settings(BaseSettings):
 
     # Rate limiting (per authenticated user, else per IP)
     rate_limit_ai: str = "5/minute"
+    # Credential endpoints are unauthenticated, so these always key by IP.
+    # They exist to make credential stuffing expensive, not to inconvenience a
+    # user who mistypes a password: the caps are well above human retry rates
+    # and far below what an automated sprayer needs.
+    rate_limit_login: str = "10/minute"
+    rate_limit_register: str = "5/minute"
 
     # Alerts / background scheduler
     alerts_enabled: bool = True
@@ -43,6 +49,9 @@ class Settings(BaseSettings):
 
     # Trade execution (paper-first broker integration)
     trade_enabled: bool = True
+    # Safe by default across every broker.  Live routing requires BOTH this
+    # explicit value and non-paper credentials; no provider infers it from URL.
+    trading_mode: str = "paper"  # paper | live
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
     max_order_notional: float = 10_000.0
     min_trade_confidence: float = 0.0  # 0 -> no gate; set >0 to require signal confidence
@@ -58,6 +67,10 @@ class Settings(BaseSettings):
     # protection, it is a report you get next time you look.
     risk_sweep_enabled: bool = True
     risk_sweep_interval_minutes: int = 5
+    paper_automation_enabled: bool = False  # explicit opt-in; paper only
+    paper_automation_interval_minutes: int = 15
+    worker_queue_enabled: bool = False  # enable only with a separate Redis worker
+    admin_emails: str = ""  # comma-separated allowlist; empty denies everyone
 
     # Inbound broker webhook (Alpaca trade updates). Shared-secret authenticated;
     # empty -> the endpoint is disabled (503) and only the poll backstop runs.
@@ -116,7 +129,13 @@ class Settings(BaseSettings):
                 "CACHE_BACKEND must be 'redis' in production (multi-worker safety)."
             )
         errors.extend(self._encryption_key_errors())
+        if self.trading_mode not in {"paper", "live"}:
+            errors.append("TRADING_MODE must be 'paper' or 'live'.")
         return errors
+
+    @property
+    def live_trading_enabled(self) -> bool:
+        return self.trading_mode.strip().lower() == "live"
 
     def _encryption_key_errors(self) -> list[str]:
         raw = self.encryption_key.strip()

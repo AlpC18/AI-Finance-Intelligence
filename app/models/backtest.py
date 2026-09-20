@@ -1,6 +1,6 @@
 """Backtesting request, structured report, and the persisted run history."""
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field as PField, model_validator
 from sqlmodel import Field, SQLModel
@@ -61,6 +61,28 @@ class BacktestReport(BaseModel):
     # Optional so the field is additive for anything already reading this model.
     id: Optional[int] = None
     created_at: Optional[datetime] = None
+
+
+class WalkForwardRequest(BacktestRequest):
+    """Repeated out-of-sample checks for a fixed strategy configuration."""
+
+    folds: int = PField(default=3, ge=1, le=12)
+    test_bars: int = PField(default=30, ge=10, le=1000)
+
+
+class WalkForwardFold(BaseModel):
+    fold: int
+    train: BacktestMetrics
+    test: BacktestMetrics
+
+
+class WalkForwardReport(BaseModel):
+    symbol: str
+    folds: list[WalkForwardFold]
+    average_train_return_pct: float
+    average_test_return_pct: float
+    performance_decay_pct: float
+    overfitting_risk: Literal["low", "moderate", "high"]
 
 
 class BacktestRun(SQLModel, table=True):

@@ -220,7 +220,7 @@ async def test_fill_increments_the_webhook_source_metric(session, recon):
 # --- Endpoint authentication ---
 def test_webhook_disabled_without_secret(client):
     """Closed by default: no configured secret means the endpoint is off."""
-    resp = client.post("/api/trade/webhook", json=_fill_event().model_dump())
+    resp = client.post("/api/trade/webhook", json=_fill_event().model_dump(mode="json"))
     assert resp.status_code == 503
 
 
@@ -229,7 +229,7 @@ def test_webhook_rejects_wrong_and_missing_secret(client, monkeypatch):
 
     settings = get_settings()
     monkeypatch.setattr(settings, "trade_webhook_secret", "s3cret", raising=False)
-    payload = _fill_event().model_dump()
+    payload = _fill_event().model_dump(mode="json")
 
     assert client.post("/api/trade/webhook", json=payload).status_code == 401
     assert client.post(
@@ -244,7 +244,7 @@ def test_webhook_accepts_correct_secret(client, monkeypatch):
 
     resp = client.post(
         "/api/trade/webhook",
-        json=_fill_event("unknown-order").model_dump(),
+        json=_fill_event("unknown-order").model_dump(mode="json"),
         headers={"X-Webhook-Secret": "s3cret"},
     )
     assert resp.status_code == 200

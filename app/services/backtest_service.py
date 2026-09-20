@@ -13,7 +13,7 @@ import pandas as pd
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.core.errors import NotFoundError
+from app.core.errors import AppError, NotFoundError
 from app.models.backtest import (
     BacktestComparison,
     BacktestMetrics,
@@ -24,6 +24,9 @@ from app.models.backtest import (
     BacktestRunSummary,
     BacktestTrade,
     EquityPoint,
+    WalkForwardFold,
+    WalkForwardReport,
+    WalkForwardRequest,
 )
 from app.providers.base import MarketDataProvider
 from app.services.indicators import compute_indicators
@@ -39,6 +42,34 @@ class BacktestService:
         )
         close = hist["Close"].reset_index(drop=True)
         return _simulate(req, close)
+
+    async def walk_forward(self, req: WalkForwardRequest) -> WalkForwardReport:
+        """Repeated train/test validation; never reports in-sample strength alone."""
+        close = (await self._provider.get_history(req.symbol.upper().strip(), period=req.period))["Close"].reset_index(drop=True)
+        initial_train = len(close) - req.folds * req.test_bars
+        if initial_train < max(req.warmup + 10, 20):
+            raise AppError("Yeterli veri yok: train + her fold icin test barlari gerekli.", status_code=422)
+        folds: list[WalkForwardFold] = []
+        for index in range(req.folds):
+            train_end = initial_train + index * req.test_bars
+            test_end = train_end + req.test_bars
+            train = _simulate(req, close.iloc[:train_end].reset_index(drop=True))
+            # Include the warm-up immediately before the held-out window, but
+            # reset capital: no test fold may inherit a train-period position.
+            test_start = max(0, train_end - req.warmup)
+            test = _simulate(req, close.iloc[test_start:test_end].reset_index(drop=True))
+            folds.append(WalkForwardFold(fold=index + 1, train=train.metrics, test=test.metrics))
+        avg_train = sum(f.train.total_return_pct for f in folds) / len(folds)
+        avg_test = sum(f.test.total_return_pct for f in folds) / len(folds)
+        decay = avg_train - avg_test
+        risk = "high" if avg_train > 0 and avg_test <= 0 else (
+            "moderate" if decay > max(5.0, abs(avg_train) * 0.5) else "low"
+        )
+        return WalkForwardReport(
+            symbol=req.symbol.upper().strip(), folds=folds,
+            average_train_return_pct=round(avg_train, 2), average_test_return_pct=round(avg_test, 2),
+            performance_decay_pct=round(decay, 2), overfitting_risk=risk,
+        )
 
 
     # --- Persistence -------------------------------------------------------

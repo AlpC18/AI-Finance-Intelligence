@@ -20,3 +20,8 @@ def user_or_ip_key(request: Request) -> str:
 limiter = Limiter(key_func=user_or_ip_key)
 AI_RATE_LIMIT = get_settings().rate_limit_ai
 TRADE_RATE_LIMIT = get_settings().rate_limit_trade
+# No Authorization header can exist on these routes, so `user_or_ip_key`
+# necessarily falls back to the client address - which is the correct bucket
+# for an attacker who has no account yet.
+LOGIN_RATE_LIMIT = get_settings().rate_limit_login
+REGISTER_RATE_LIMIT = get_settings().rate_limit_register

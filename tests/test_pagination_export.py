@@ -166,7 +166,9 @@ def test_the_ledger_exports_as_a_csv_attachment(client, auth_headers):
     assert res.headers["content-disposition"] == 'attachment; filename="transactions.csv"'
     rows = _rows(res.text)
     assert rows[0] == ["timestamp", "symbol", "action", "quantity", "price", "value"]
-    assert rows[1][1:] == ["AAPL", "BUY", "3.0", "50.0", "150.0"]
+    # Money renders at natural scale: neither float repr ("3.0") nor the
+    # NUMERIC(28,8) storage scale ("3.00000000") reaches the file.
+    assert rows[1][1:] == ["AAPL", "BUY", "3", "50", "150"]
 
 
 def test_the_export_ignores_the_page_cap(client, auth_headers):

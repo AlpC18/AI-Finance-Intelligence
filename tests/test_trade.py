@@ -1,4 +1,6 @@
 """Trade execution + encryption-at-rest: crypto, risk gates, paper orders, CI seam."""
+import json
+
 import httpx
 import numpy as np
 import pandas as pd
@@ -82,6 +84,24 @@ async def test_alpaca_provider_places_order_over_mock_transport():
 
 
 @pytest.mark.asyncio
+async def test_alpaca_provider_sends_a_complete_protective_bracket():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"id": "ord_2", "symbol": "AAPL", "side": "buy",
+                                         "qty": "1", "type": "market", "status": "accepted"})
+
+    broker = AlpacaBrokerProvider("k", "s", transport=_mock_transport(handler))
+    await broker.place_order(OrderRequest(
+        symbol="AAPL", side="buy", quantity=1, stop_loss=95, take_profit=120,
+    ))
+    assert seen["order_class"] == "bracket"
+    assert seen["stop_loss"] == {"stop_price": "95"}
+    assert seen["take_profit"] == {"limit_price": "120"}
+
+
+@pytest.mark.asyncio
 async def test_alpaca_provider_maps_http_error_to_broker_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(422, json={"message": "insufficient buying power"})
@@ -160,6 +180,31 @@ def test_execute_buy_places_paper_order(client, auth_headers):
     body = r.json()
     assert body["accepted"] is True and body["order"]["side"] == "buy"
     assert broker.placed and broker.placed[0].side == "buy"
+
+
+def test_execute_persists_and_forwards_a_valid_protective_bracket(client, auth_headers):
+    broker = _FakeBroker()
+    _wire(client, _service(Settings(anthropic_api_key=""), broker))
+    client.post("/api/trade/credentials", headers=auth_headers,
+                json={"api_key": "PKID1234", "api_secret": "SEC5678"})
+    r = client.post("/api/trade/execute", headers=auth_headers, json={
+        "symbol": "AAPL", "action": "BUY", "quantity": 1,
+        "stop_loss": 100, "take_profit": 120,
+    })
+    assert r.status_code == 200, r.text
+    assert broker.placed[0].stop_loss == 100
+    assert broker.placed[0].take_profit == 120
+
+
+def test_execute_rejects_inverted_protective_bracket(client, auth_headers):
+    _wire(client, _service(Settings(anthropic_api_key=""), _FakeBroker()))
+    client.post("/api/trade/credentials", headers=auth_headers,
+                json={"api_key": "PKID1234", "api_secret": "SEC5678"})
+    r = client.post("/api/trade/execute", headers=auth_headers, json={
+        "symbol": "AAPL", "action": "BUY", "quantity": 1,
+        "stop_loss": 115, "take_profit": 120,
+    })
+    assert r.status_code == 422
 
 
 def test_execute_rejects_hold_signal(client, auth_headers):

@@ -4,6 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field as PField
 from sqlmodel import Field, SQLModel
+from app.core.money import Money, MONEY_DIGITS, MONEY_PLACES
 
 Action = Literal["BUY", "SELL"]
 
@@ -17,24 +18,24 @@ class Transaction(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True, nullable=False)
     symbol: str = Field(index=True)
     action: str = Field(index=True)  # BUY | SELL
-    quantity: float
-    price: float
+    quantity: Money = Field(max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES)
+    price: Money = Field(max_digits=MONEY_DIGITS, decimal_places=MONEY_PLACES)
     timestamp: datetime = Field(default_factory=_utcnow, index=True)
 
 
 class TransactionCreate(BaseModel):
     symbol: str = PField(min_length=1, max_length=20)
     action: Action
-    quantity: float = PField(gt=0)
-    price: float = PField(gt=0)
+    quantity: Money = PField(gt=0)
+    price: Money = PField(gt=0)
 
 
 class TransactionRead(BaseModel):
     id: int
     symbol: str
     action: Action
-    quantity: float
-    price: float
+    quantity: Money
+    price: Money
     timestamp: datetime
 
 
@@ -42,6 +43,6 @@ class Holding(BaseModel):
     """Reconstructed net position for one symbol (avg-cost basis)."""
 
     symbol: str
-    quantity: float
-    avg_cost: float
-    realized_pnl: float
+    quantity: Money
+    avg_cost: Money
+    realized_pnl: Money

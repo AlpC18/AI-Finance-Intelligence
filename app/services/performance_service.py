@@ -10,7 +10,11 @@ are captured lazily, so quiet days leave gaps. Gaps are reported as unobserved
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlmodel import Session, select
+
+from app.core.money import HUNDRED, ZERO, to_decimal
 
 from app.models.performance import EquityCurvePoint, PerformanceReport
 from app.models.risk import EquitySnapshot
@@ -46,7 +50,7 @@ class PerformanceService:
             start_equity=round(start, 2),
             current_equity=round(current, 2),
             absolute_return=round(current - start, 2),
-            return_pct=round((current - start) / start * 100.0, 4) if start else 0.0,
+            return_pct=round((current - start) / start * HUNDRED, 4) if start else ZERO,
             max_drawdown_pct=_max_drawdown_pct(marked),
             best_day_pct=round(max(daily), 4) if daily else None,
             worst_day_pct=round(min(daily), 4) if daily else None,
@@ -66,7 +70,7 @@ class PerformanceService:
             for r in reversed(list(rows))
         ]
 
-    async def _current_equity(self, session: Session, user_id: int) -> float:
+    async def _current_equity(self, session: Session, user_id: int) -> Decimal:
         report = await self._portfolio.risk_report(session, user_id)
         return round(report.total_value + report.total_realized_pnl, 2)
 
@@ -79,20 +83,25 @@ def _span_days(points: list[EquityCurvePoint]) -> int:
     return (last - first).days + 1
 
 
-def _daily_returns(values: list[float]) -> list[float]:
+def _daily_returns(values: list[Decimal]) -> list[Decimal]:
     return [
-        (curr - prev) / prev * 100.0
+        (curr - prev) / prev * HUNDRED
         for prev, curr in zip(values, values[1:])
         if prev
     ]
 
 
-def _max_drawdown_pct(values: list[float]) -> float:
-    """Largest peak-to-trough decline, as a positive percentage."""
-    peak, worst = None, 0.0
+def _max_drawdown_pct(values: list[Decimal]) -> Decimal:
+    """Largest peak-to-trough decline, as a positive percentage.
+
+    Exact throughout: this figure is compared against the configured loss
+    limit, so an error here is the difference between halting an account and
+    not halting it.
+    """
+    peak, worst = None, ZERO
     for value in values:
         if peak is None or value > peak:
             peak = value
         if peak:
-            worst = min(worst, (value - peak) / peak * 100.0)
+            worst = min(worst, (value - peak) / peak * HUNDRED)
     return round(abs(worst), 4)

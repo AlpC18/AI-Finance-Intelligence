@@ -410,6 +410,7 @@ def test_a_short_poll_interval_does_not_invert_the_lock_ttl():
         ("order_reconciliation_enabled", "order-reconciliation"),
         ("position_sync_enabled", "position-sync"),
         ("event_scan_enabled", "event-scan"),
+        ("paper_automation_enabled", "paper-automations"),
     ],
 )
 def test_a_disabled_sweep_is_never_registered(flag, job_id):

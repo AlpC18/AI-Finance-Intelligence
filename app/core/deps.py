@@ -23,6 +23,15 @@ from app.services.reconciliation_service import TradeReconciliationService
 from app.services.signal_performance_service import SignalPerformanceService
 from app.services.risk_service import RiskService
 from app.services.trade_service import TradeService
+from app.services.watchlist_service import WatchlistService
+from app.services.tax_lot_service import TaxLotService
+from app.services.paper_trading_service import PaperTradingService
+from app.services.automation_service import AutomationService
+from app.services.goal_service import GoalService
+from app.services.rebalance_service import RebalanceService
+from app.services.activity_service import ActivityService
+from app.services.asset_service import AssetService
+from app.services.consumer_service import ConsumerService
 
 logger = logging.getLogger("deps")
 
@@ -180,7 +189,68 @@ def get_backtest_service() -> BacktestService:
 
 @lru_cache
 def get_trade_service() -> TradeService:
-    return TradeService(get_settings(), get_market_service(), risk=get_risk_service())
+    return TradeService(
+        get_settings(), get_market_service(), risk=get_risk_service(),
+        activity=get_activity_service(),
+    )
+
+
+@lru_cache
+def get_watchlist_service() -> WatchlistService:
+    return WatchlistService(get_activity_service())
+
+
+@lru_cache
+def get_activity_service() -> ActivityService:
+    return ActivityService()
+
+
+@lru_cache
+def get_asset_service() -> AssetService:
+    return AssetService()
+
+
+@lru_cache
+def get_consumer_service() -> ConsumerService:
+    return ConsumerService()
+
+
+@lru_cache
+def get_task_queue():
+    """Redis Streams in production; local trusted-task adapter otherwise."""
+    from app.core.task_queue import LocalTaskQueue, RedisTaskQueue
+
+    settings = get_settings()
+    if settings.cache_backend == "redis" and settings.worker_queue_enabled:
+        client = _redis_client_or_none()
+        if client is not None:
+            return RedisTaskQueue(client)
+    return LocalTaskQueue()
+
+
+@lru_cache
+def get_tax_lot_service() -> TaxLotService:
+    return TaxLotService(get_portfolio_service())
+
+
+@lru_cache
+def get_paper_trading_service() -> PaperTradingService:
+    return PaperTradingService(get_market_service())
+
+
+@lru_cache
+def get_automation_service() -> AutomationService:
+    return AutomationService(get_market_service(), get_paper_trading_service())
+
+
+@lru_cache
+def get_goal_service() -> GoalService:
+    return GoalService(get_performance_service())
+
+
+@lru_cache
+def get_rebalance_service() -> RebalanceService:
+    return RebalanceService(YahooMarketProvider(), get_portfolio_service())
 
 
 @lru_cache

@@ -164,6 +164,49 @@ async def test_kill_switch_disabled_when_limit_zero():
         await risk.assert_not_halted(s, 1)  # does not raise
 
 
+@pytest.mark.asyncio
+async def test_account_risk_limits_require_stops_and_cap_daily_orders():
+    engine = _engine()
+    with Session(engine) as s:
+        risk = RiskService(PortfolioService(_FakeMarket(), None))
+        risk.set_config(s, 1, RiskConfigUpdate(
+            daily_loss_limit_pct=0, max_daily_trades=1,
+            require_protective_stop=True,
+        ))
+        with pytest.raises(AppError) as exc:
+            await risk.assert_order_allowed(
+                s, 1, symbol="AAPL", side="buy", quantity=1, price=100,
+                has_protective_stop=False,
+            )
+        assert exc.value.reason == "protective_stop"
+
+        s.add(TradeOrder(user_id=1, broker_order_id="today", symbol="AAPL",
+                         side="buy", quantity=1, status="accepted"))
+        s.commit()
+        with pytest.raises(AppError) as exc:
+            await risk.assert_order_allowed(
+                s, 1, symbol="AAPL", side="buy", quantity=1, price=100,
+                has_protective_stop=True,
+            )
+        assert exc.value.reason == "daily_trade_limit"
+
+
+@pytest.mark.asyncio
+async def test_account_risk_limits_cap_new_position_concentration():
+    engine = _engine()
+    with Session(engine) as s:
+        risk = RiskService(PortfolioService(_FakeMarket(), None))
+        risk.set_config(s, 1, RiskConfigUpdate(
+            daily_loss_limit_pct=0, max_position_weight_pct=50,
+        ))
+        with pytest.raises(AppError) as exc:
+            await risk.assert_order_allowed(
+                s, 1, symbol="AAPL", side="buy", quantity=1, price=100,
+                has_protective_stop=True,
+            )
+        assert exc.value.reason == "position_concentration"
+
+
 # --- Execute persists order + audit, and honors the kill-switch ---------------
 @pytest.mark.asyncio
 async def test_execute_persists_order_and_audit_log():

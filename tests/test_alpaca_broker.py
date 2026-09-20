@@ -10,6 +10,8 @@ string and occasionally as ``null`` or ``""``.
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 import json
 
 import httpx
@@ -20,8 +22,9 @@ from app.models.broker import OrderRequest
 from app.providers.alpaca_broker_provider import (
     AlpacaBrokerProvider,
     _error_message,
-    _opt_float,
-    _to_float,
+    _opt_money,
+    _to_money,
+    _wire,
 )
 from app.providers.broker_base import BrokerError
 
@@ -61,7 +64,9 @@ async def test_get_account_coerces_string_numerics():
         "buying_power": "3000.10",
     }
     account = await _broker(lambda r: httpx.Response(200, json=payload)).get_account()
-    assert account.cash == 1500.55 and account.buying_power == 3000.10
+    # Exact: "1500.55" from the venue must not become the nearest float.
+    assert account.cash == Decimal("1500.55")
+    assert account.buying_power == Decimal("3000.10")
     assert account.account_number == "PA123"
 
 
@@ -93,7 +98,8 @@ async def test_place_market_order_omits_limit_price():
     order = await _broker(handler).place_order(
         OrderRequest(symbol="AAPL", side="buy", quantity=3, order_type="market")
     )
-    assert "limit_price" not in seen and seen["qty"] == "3.0"
+    # A quantity now goes out in canonical decimal form ("3", not "3.0").
+    assert "limit_price" not in seen and seen["qty"] == "3"
     assert order.id == "ord-1" and order.status == "accepted"
 
 
@@ -128,7 +134,8 @@ async def test_limit_type_without_price_sends_no_limit_price():
 async def test_get_order_reads_symbol_and_side_from_the_payload():
     filled = {**_ORDER_JSON, "status": "filled", "filled_qty": "3", "filled_avg_price": "182.4"}
     order = await _broker(lambda r: httpx.Response(200, json=filled)).get_order("ord-1")
-    assert order.filled_quantity == 3.0 and order.filled_avg_price == 182.4
+    assert order.filled_quantity == Decimal("3")
+    assert order.filled_avg_price == Decimal("182.4")
     assert order.symbol == "AAPL" and order.side == "buy"
 
 
@@ -228,15 +235,54 @@ def test_error_message_survives_a_non_json_body_and_is_truncated():
 
 @pytest.mark.parametrize(
     "value,expected",
-    [("1.5", 1.5), (2, 2.0), (None, 0.0), ("", 0.0), ("abc", 0.0), ({}, 0.0)],
+    [
+        ("1.5", Decimal("1.5")),
+        (2, Decimal("2")),
+        (None, Decimal("0")),
+        ("", Decimal("0")),
+        ("abc", Decimal("0")),
+        ({}, Decimal("0")),
+    ],
 )
-def test_to_float_never_raises(value, expected):
-    assert _to_float(value) == expected
+def test_to_money_never_raises(value, expected):
+    assert _to_money(value) == expected
+
+
+def test_a_venue_float_does_not_inherit_binary_error():
+    """The reason this boundary exists at all.
+
+    ``Decimal(0.1)`` is 0.1000000000000000055511151231257827..., which would
+    carry the float's representation error into the exact ledger. Parsing via
+    the string form is what keeps it out.
+    """
+    assert _to_money(0.1) == Decimal("0.1")
+    assert _to_money(0.1) != Decimal(0.1)
 
 
 @pytest.mark.parametrize(
     "value,expected",
-    [("1.5", 1.5), (0, 0.0), (None, None), ("", None), ("abc", None), ([], None)],
+    [
+        ("1.5", Decimal("1.5")),
+        (0, Decimal("0")),
+        (None, None),
+        ("", None),
+        ("abc", None),
+        ([], None),
+    ],
 )
-def test_opt_float_distinguishes_absent_from_zero(value, expected):
-    assert _opt_float(value) == expected
+def test_opt_money_distinguishes_absent_from_zero(value, expected):
+    assert _opt_money(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (Decimal("3"), "3"),
+        (Decimal("3.00000000"), "3"),      # storage scale must not reach the venue
+        (Decimal("19.99"), "19.99"),
+        (Decimal("0.5"), "0.5"),
+        (Decimal("1E+2"), "100"),          # nor may exponent notation
+    ],
+)
+def test_wire_renders_a_quantity_the_venue_will_accept(value, expected):
+    assert _wire(value) == expected

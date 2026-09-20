@@ -6,6 +6,8 @@ an order that the broker already accepted.
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 from typing import Any, Optional
 
 import httpx
@@ -16,6 +18,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from app.core.money import ZERO, to_decimal
 from app.models.broker import BrokerAccount, BrokerOrder, BrokerPosition, OrderRequest
 from app.providers.broker_base import BrokerError
 
@@ -74,20 +77,24 @@ class AlpacaBrokerProvider:
             account_number=str(data.get("account_number", "")),
             status=str(data.get("status", "")),
             currency=str(data.get("currency", "USD")),
-            cash=_to_float(data.get("cash")),
-            buying_power=_to_float(data.get("buying_power")),
+            cash=_to_money(data.get("cash")),
+            buying_power=_to_money(data.get("buying_power")),
         )
 
     async def place_order(self, order: OrderRequest) -> BrokerOrder:
         body: dict = {
             "symbol": order.symbol,
-            "qty": str(order.quantity),
+            "qty": _wire(order.quantity),
             "side": order.side,
             "type": order.order_type,
             "time_in_force": order.time_in_force,
         }
         if order.order_type == "limit" and order.limit_price is not None:
             body["limit_price"] = str(order.limit_price)
+        if order.stop_loss is not None and order.take_profit is not None:
+            body["order_class"] = "bracket"
+            body["stop_loss"] = {"stop_price": _wire(order.stop_loss)}
+            body["take_profit"] = {"limit_price": _wire(order.take_profit)}
         if order.client_order_id:
             # The venue enforces uniqueness on this per account, which is the
             # backstop when two concurrent requests both clear our pre-check.
@@ -126,7 +133,7 @@ class AlpacaBrokerProvider:
         """
         body: dict = {}
         if quantity is not None:
-            body["qty"] = str(quantity)
+            body["qty"] = _wire(quantity)
         if limit_price is not None:
             body["limit_price"] = str(limit_price)
         if client_order_id:
@@ -145,9 +152,9 @@ class AlpacaBrokerProvider:
         return [
             BrokerPosition(
                 symbol=str(p.get("symbol", "")),
-                quantity=_to_float(p.get("qty")),
-                avg_entry_price=_to_float(p.get("avg_entry_price")),
-                market_value=_to_float(p.get("market_value")),
+                quantity=_to_money(p.get("qty")),
+                avg_entry_price=_to_money(p.get("avg_entry_price")),
+                market_value=_to_money(p.get("market_value")),
                 side=str(p.get("side", "long")),
             )
             for p in items
@@ -159,11 +166,11 @@ def _order_from(data: dict, symbol: str, side: str, order_type: str) -> BrokerOr
         id=str(data.get("id", "")),
         symbol=str(data.get("symbol", symbol)),
         side=str(data.get("side", side)),
-        quantity=_to_float(data.get("qty", 0.0)),
+        quantity=_to_money(data.get("qty")),
         order_type=str(data.get("type", order_type)),
         status=str(data.get("status", "")),
-        filled_quantity=_to_float(data.get("filled_qty")),
-        filled_avg_price=_opt_float(data.get("filled_avg_price")),
+        filled_quantity=_to_money(data.get("filled_qty")),
+        filled_avg_price=_opt_money(data.get("filled_avg_price")),
         submitted_at=data.get("submitted_at"),
     )
 
@@ -177,17 +184,41 @@ def _error_message(resp: httpx.Response) -> str:
     return f"Alpaca error {resp.status_code}: {msg}"[:300]
 
 
-def _to_float(value: object, default: float = 0.0) -> float:
+def _wire(value: object) -> str:
+    """Render a Decimal for the venue without exponent or trailing zeros.
+
+    ``str(Decimal("3.00000000"))`` keeps the storage scale and
+    ``str(Decimal("1E+2"))`` is exponent notation; neither is what an order
+    endpoint expects to receive as a quantity.
+    """
+    normalized = to_decimal(value).normalize()
+    sign, digits, exponent = normalized.as_tuple()
+    if isinstance(exponent, int) and exponent > 0:  # 1E+2 -> 100
+        normalized = normalized.quantize(Decimal(1))
+    return format(normalized, "f")
+
+
+def _to_money(value: object, default: Decimal = ZERO) -> Decimal:
+    """Coerce one Alpaca numeric into an exact Decimal.
+
+    The venue is inconsistent about types - the same concept arrives as
+    ``"19.99"`` on one field and ``19.99`` on another - and this is the
+    outermost edge of the system, so it is where the conversion belongs.
+    Going through ``to_decimal`` means a JSON float is parsed via its string
+    form and never inherits binary representation error.
+    """
     try:
-        return float(value)  # type: ignore[arg-type]
+        return to_decimal(value)
     except (TypeError, ValueError):
         return default
 
 
-def _opt_float(value: object) -> Optional[float]:
+def _opt_money(value: object) -> Optional[Decimal]:
+    """As ``_to_money``, but keeps None: an unfilled order has no fill price,
+    which is a different fact from a fill price of zero."""
     if value is None or value == "":
         return None
     try:
-        return float(value)  # type: ignore[arg-type]
+        return to_decimal(value)
     except (TypeError, ValueError):
         return None
